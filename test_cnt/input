@@ -1,0 +1,15 @@
+2         !ns
+1         !width
+200        !nkx
+1         ! num B 
+0.0           !B values
+1   ! axis of ribbon length 
+28  ! num CPU
+T   ! reorder axis
+3 2 1
+T   ! transport 
+25         !length
+-5.0  -2.5   200    ! emin emax num_en
+T   ! read potential from pot_dat
+F   ! quantum dot
+
