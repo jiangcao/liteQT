@@ -1,20 +1,24 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls
-use green, only : green_calc_g
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device
+use green, only : green_calc_g, green_calc_polarization, green_calc_w
 
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
-complex(8), allocatable :: H00(:,:),H10(:,:),Hii(:,:),H1i(:,:,:),BHii(:,:),BH1i(:,:,:),Ham(:,:),BHam(:,:),G_retarded(:,:,:),sig(:,:),g00(:,:),gbb(:,:),s00(:,:),A(:,:),T(:,:,:),H00ld(:,:,:),H10ld(:,:,:),G_lesser(:,:,:),G_greater(:,:,:)
-complex(8)::ldos,pdos,ndos
+complex(8), allocatable :: H00(:,:),H10(:,:),Hii(:,:),H1i(:,:,:),BHii(:,:),BH1i(:,:,:),Ham(:,:),BHam(:,:),H00ld(:,:,:),H10ld(:,:,:),T(:,:,:),V(:,:)
+complex(8), allocatable :: G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:)
+complex(8), allocatable :: P_retarded(:,:,:),P_lesser(:,:,:),P_greater(:,:,:)
+complex(8), allocatable :: W_retarded(:,:,:),W_lesser(:,:,:),W_greater(:,:,:)
+complex(8)::ldos,pdos,ndos,pr,pl,pg,wr,wl,wg
 logical :: reorder_axis, ltrans, lreadpot, lqdot
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
+integer :: nm_dev
 
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -121,11 +125,14 @@ if (ltrans) then
     print *, 'Build the full device H'
     print *, 'length=',length
     allocate(Ham(nb*length,nb*length))
+    allocate(V(nb*length,nb*length))
     allocate(pot(length))
     allocate(H00ld(nb*NS,nb*NS,2))
     allocate(H10ld(nb*NS,nb*NS,2))
     allocate(T(nb*ns,nb*length,2))
+    
     call w90_MAT_DEF(H00ld(:,:,1),H10ld(:,:,1),0.0d0, 0.0d0,NS)
+    
     H10ld(:,:,2) = H10ld(:,:,1)
     H10ld(:,:,1) = transpose(conjg(H10ld(:,:,1)))
     H00ld(:,:,2) = H00ld(:,:,1)
@@ -147,11 +154,39 @@ if (ltrans) then
     allocate(G_retarded(nb*length,nb*length,nen))
     allocate(G_lesser(nb*length,nb*length,nen))
     allocate(G_greater(nb*length,nb*length,nen))
+    
+    allocate(P_retarded(nb*length,nb*length,nen))
+    allocate(P_lesser(nb*length,nb*length,nen))
+    allocate(P_greater(nb*length,nb*length,nen))
+    
+    allocate(W_retarded(nb*length,nb*length,nen))
+    allocate(W_lesser(nb*length,nb*length,nen))
+    allocate(W_greater(nb*length,nb*length,nen))
 
     en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
-
+    ! Ham matrix
     call w90_MAT_DEF_full_device(Ham,0.0d0,length)
-        
+    ! Coulomb operator
+    call w90_bare_coulomb_full_device(V,0.0d0,length,1.0d0)
+    !
+    open(unit=11,file='V.dat',status='unknown')
+    do i=1, size(V,1)
+        do j=1, size(V,2)
+            write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
+        end do
+        write(11,*)
+    end do
+    close(11)
+    !
+    open(unit=11,file='Ham.dat',status='unknown')
+    do i=1, size(Ham,1)
+        do j=1, size(Ham,2)
+            write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j)), aimag(Ham(i,j))
+        end do
+        write(11,*)
+    end do
+    close(11)
+    ! add on potential    
     do j = 1,length
         do ib = 1,nb
             Ham((j-1)*nb+ib,(j-1)*nb+ib)=Ham((j-1)*nb+ib,(j-1)*nb+ib)+pot(j)
@@ -162,43 +197,97 @@ if (ltrans) then
         H00ld(ib,ib,1)=H00ld(ib,ib,1)+pot(1)
         H00ld(ib,ib,2)=H00ld(ib,ib,2)+pot(length)
     end do
-        
-    call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,G_retarded,G_lesser,G_greater,(/-4.1d0,-3.5d0/),300.0d0)
-        
-    
+    nm_dev=nb*length
+    !
+    print *, 'calc G'
+    call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,G_retarded,G_lesser,G_greater,(/VBM,CBM/),(/300.0d0,300.0d0/))
+    !
+    print *, 'calc P'
+    call green_calc_polarization(nen,1,nen,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater)    
+    !
+    print *, 'calc W'
+    call green_calc_w(nen,1,nen,En,nm_dev,V,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+    !
     open(unit=11,file='ldos.dat',status='unknown')
     open(unit=12,file='pdos.dat',status='unknown')
     open(unit=13,file='ndos.dat',status='unknown')
+    open(unit=14,file='P_r.dat',status='unknown')
+    open(unit=15,file='P_lesser.dat',status='unknown')
+    open(unit=16,file='P_greater.dat',status='unknown')
+    open(unit=17,file='W_r.dat',status='unknown')
+    open(unit=18,file='W_lesser.dat',status='unknown')
+    open(unit=19,file='W_greater.dat',status='unknown')
     do i = 1,nen
         do j = 1,length
             ldos=0.0d0
             pdos=0.0d0
             ndos=0.0d0
+            pr=0.0d0
+            pl=0.0d0
+            pg=0.0d0
+            wr=0.0d0
+            wl=0.0d0
+            wg=0.0d0
             do ib=1,nb
                 ldos = ldos+ G_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
                 ndos = ndos+ G_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
                 pdos = pdos+ G_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+                !
+                pr = pr+ P_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+                pl = pl+ P_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+                pg = pg+ P_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+                !
+                wr = wr+ W_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+                wl = wl+ W_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+                wg = wg+ W_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
             end do
             write(11,'(3F15.4)') j*Lx, en(i) , -aimag(ldos)
-            write(12,'(3F15.4)') j*Lx, en(i) , aimag(pdos)
+            write(12,'(3F15.4)') j*Lx, en(i) , -aimag(pdos)
             write(13,'(3F15.4)') j*Lx, en(i) , aimag(ndos)
+            !
+            write(14,'(3F15.4)') j*Lx, en(i) , -aimag(pr)
+            write(15,'(3F15.4)') j*Lx, en(i) , -aimag(pl)
+            write(16,'(3F15.4)') j*Lx, en(i) ,  aimag(pg)
+            !
+            write(17,'(3F15.4)') j*Lx, en(i) , -aimag(wr)
+            write(18,'(3F15.4)') j*Lx, en(i) , -aimag(wl)
+            write(19,'(3F15.4)') j*Lx, en(i) ,  aimag(wg)
         end do
         write(11,*)
         write(12,*)
         write(13,*)
+        write(14,*)
+        write(15,*)
+        write(16,*)
+        write(17,*)
+        write(18,*)
+        write(19,*)
     end do
     close(11)
     close(12)
     close(13)
+    close(14)
+    close(15)
+    close(16)
+    close(17)
+    close(18)
+    close(19)
     
     deallocate(pot)
     deallocate(H00ld)
     deallocate(H10ld) 
     deallocate(Ham)
+    deallocate(V)
     deallocate(T)
     deallocate(G_retarded)
     deallocate(G_lesser)
     deallocate(G_greater)
+    deallocate(P_retarded)
+    deallocate(P_lesser)
+    deallocate(P_greater)
+    deallocate(W_retarded)
+    deallocate(W_lesser)
+    deallocate(W_greater)
     deallocate(en)
     
 end if

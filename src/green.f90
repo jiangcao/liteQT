@@ -7,11 +7,55 @@ implicit none
 
 private
 
-public :: green_calc_g, green_calc_polarization
+public :: green_calc_g, green_calc_polarization, green_calc_w
 
 CONTAINS
 
-! P<>(hw) = G<>(E) * G><(E+hw)
+
+! W^r(hw) = inv(I - V P^r(hw)) V
+! W^<>(hw) = W^r(hw) P^<>(hw) (W^r)'(hw)
+subroutine green_calc_w(ne,nopmin,nopmax,E,nm_dev,V,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+implicit none
+integer, intent(in) :: ne
+integer, intent(in) :: nopmin,nopmax
+integer, intent(in) :: nm_dev
+real(8), intent(in) :: E(ne)  ! energy vector
+complex(8), intent(in) :: V(nm_dev,nm_dev)  ! bare Coulomb operator
+complex(8), intent(in) :: P_retarded(nm_dev,nm_dev,ne) ! polarization functions
+complex(8), intent(in) :: P_lesser(nm_dev,nm_dev,ne)
+complex(8), intent(in) :: P_greater(nm_dev,nm_dev,ne)
+complex(8), intent(inout) :: W_retarded(nm_dev,nm_dev,ne) ! screened Coulomb operator
+complex(8), intent(inout) :: W_lesser(nm_dev,nm_dev,ne)
+complex(8), intent(inout) :: W_greater(nm_dev,nm_dev,ne)
+integer :: i,j,nm,ie,nop
+complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+complex(8), allocatable, dimension(:,:) :: B,C
+REAL(8), PARAMETER :: pi = 3.14159265359d0
+complex(8) :: dE
+allocate(B(nm_dev,nm_dev))
+do nop=nopmin,nopmax
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V(:,:),nm_dev,P_retarded(:,:,nop),nm_dev,czero,B,nm_dev) 
+  W_retarded(:,:,nop) = -B
+  do i=1,nm_dev    
+    W_retarded(i,i,nop) = W_retarded(i,i,nop)+1.0d0
+  end do
+  !
+  call invert(W_retarded(:,:,nop),nm_dev)
+  !
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,V(:,:),nm_dev,czero,B,nm_dev) 
+  W_retarded(:,:,nop)=B
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_lesser(:,:,nop),nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_lesser(:,:,nop),nm_dev) 
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_greater(:,:,nop),nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_greater(:,:,nop),nm_dev) 
+end do
+end subroutine green_calc_w
+
+
+
+! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E+hw)
+! Pij^r(hw) = \int_dE Gij^<(E) * Gji^a(E+hw) + Gij^r(E) * Gji^<(E+hw)
 subroutine green_calc_polarization(ne,nopmin,nopmax,E,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater)
 implicit none
 integer, intent(in) :: ne
@@ -25,20 +69,24 @@ complex(8), intent(inout) :: P_retarded(nm_dev,nm_dev,ne) ! polarization functio
 complex(8), intent(inout) :: P_lesser(nm_dev,nm_dev,ne)
 complex(8), intent(inout) :: P_greater(nm_dev,nm_dev,ne)
 integer :: i,j,nm,ie,nop
-complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 complex(8), allocatable, dimension(:,:) :: B,C
+REAL(8), PARAMETER :: pi = 3.14159265359d0
 complex(8) :: dE
 allocate(B(nm_dev,nm_dev))
 do nop=nopmin,nopmax
     P_lesser(:,:,nop) = dcmplx(0.0d0,0.0d0)
-    P_greater(:,:,nop) = dcmplx(0.0d0,0.0d0)
-    dE = ( E(ie) - E(ie-1) ) / 2.0d0 / pi * dcmplx(0.0d0 , -1.0d0)
+    P_greater(:,:,nop) = dcmplx(0.0d0,0.0d0)    
     do ie = nop+1,ne 
-        call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,G_lesser(:,:,ie),nm_dev,G_greater(:,:,ie-nop),nm_dev,czero,B,nm_dev) 
-        P_lesser(:,:,nop) = P_lesser(:,:,nop) + B * dE
-        call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,G_greater(:,:,ie),nm_dev,G_lesser(:,:,ie-nop),nm_dev,czero,B,nm_dev) 
-        P_greater(:,:,nop) = P_greater(:,:,nop) + B * dE
+      dE = ( E(ie) - E(ie-1) ) / 2.0d0 / pi * dcmplx(0.0d0 , -1.0d0)
+      do i = 1, nm_dev
+	do j = 1, nm_dev
+	  P_lesser(i,j,nop) = P_lesser(i,j,nop) + dE* G_lesser(i,j,ie) * G_greater(j,i,ie-nop)
+	  P_greater(i,j,nop) = P_greater(i,j,nop) + dE* G_greater(i,j,ie) * G_lesser(j,i,ie-nop)        
+	  P_retarded(i,j,nop) = P_retarded(i,j,nop) + dE* (G_lesser(i,j,ie) * conjg(G_retarded(i,j,ie-nop)) + G_retarded(i,j,ie) * G_lesser(j,i,ie-nop))
+	end do
+      end do
     end do
 end do
 end subroutine green_calc_polarization
@@ -59,7 +107,7 @@ complex(8), intent(in) :: T(max_nm_lead,nm_dev,num_lead)  ! coupling matrix betw
 complex(8), intent(inout) :: G_retarded(nm_dev,nm_dev,ne)
 complex(8), intent(inout), optional :: G_lesser(nm_dev,nm_dev,ne)
 complex(8), intent(inout), optional :: G_greater(nm_dev,nm_dev,ne)
-real(8), intent(in), optional :: mu(num_lead), temp
+real(8), intent(in), optional :: mu(num_lead), temp(num_lead)
 integer :: i,j,nm,ie
 complex(8), allocatable, dimension(:,:) :: S00,G00,GBB,A,sig,sig_lesser,sig_greater,B,C
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
@@ -90,7 +138,7 @@ do ie = 1, ne
     call zgemm('n','n',nm_dev,nm_dev,nm,cone,A,nm_dev,T(1:nm,1:nm_dev,i),nm,czero,sig,nm_dev)  
     G_retarded(:,:,ie) = G_retarded(:,:,ie) - sig(:,:)
     if ((present(G_lesser)).or.(present(G_greater))) then      
-      fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP))		
+      fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
       B(:,:) = conjg(sig(:,:))
       C(:,:) = transpose(B(:,:))
       B(:,:) = sig(:,:) - C(:,:)

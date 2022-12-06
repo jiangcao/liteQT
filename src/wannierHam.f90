@@ -23,6 +23,7 @@ public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_M
 public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_ribbon_add_peierls, w90_MAT_DEF_full_device, w90_MAT_DEF_dot,w90_dot_add_peierls
+public :: w90_bare_coulomb_full_device
 
 CONTAINS
 
@@ -101,6 +102,12 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     print *, 'Find CBM and VBM'
     nkx=25
     nky=25    
+    if (ny .eq. 1) then
+        nky = 1
+    end if
+    if (nx .eq. 1) then
+        nkx = 1
+    end if
     dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
     allocate(energ(nb,nkx*nky))
     allocate(ind(nb))
@@ -161,9 +168,17 @@ integer, intent(in) :: nkx,nky
 real(8), dimension(nb,nkx*nky), intent(out) :: EN
 integer :: i,j
 real(8) :: dkx, dky, kx, ky
-complex(8), dimension(NB,NB) :: Hii
-    dkx = 1.0d0 / dble(nkx-1) * 2 * pi / Lx
-    dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+complex(8), dimension(NB,NB) :: Hii    
+    if (nkx > 1) then
+        dkx = 1.0d0 / dble(nkx-1) * 2 * pi / Lx
+    else 
+        dkx = pi / Lx
+    end if
+    if (nky > 1) then
+        dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+    else
+        dky = pi / Ly
+    end if
     do i = 1,nkx
     do j = 1,nky
         kx = i*dkx - pi / Lx
@@ -294,6 +309,57 @@ do i = 1, length
     end do
 end do
 END SUBROUTINE w90_MAT_DEF_full_device
+
+!!! construct the bare Coulomb Matrix for the full-device
+SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,NS)
+implicit none
+integer, intent(in) :: length
+integer, intent(in), optional :: NS
+real(8), intent(in) :: ky, eps ! dielectric constant
+complex(8), intent(out), dimension(NB*length,NB*length) :: V
+integer :: i,j, k
+real(8), dimension(3) :: kv, r
+V = dcmplx(0.0d0,0.0d0)
+do i = 1, length
+    do k = 1, length
+        do j = ymin,ymax
+            kv = ky*yhat
+            r =  dble(i-k)*alpha + dble(j)*beta                    
+            if (present(NS)) then
+                if ((i-k <= NS ) .and. (i-k >= -NS )) then                
+                    V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                    & bare_coulomb(i-k,j,eps) * exp(-z1j* dot_product(r,kv) )           
+                end if                 
+            else
+                V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                & bare_coulomb(i-k,j,eps) * exp(-z1j* dot_product(r,kv) )                           
+            end if
+        end do
+    end do
+end do
+END SUBROUTINE w90_bare_coulomb_full_device
+! function to calculate the bare coulomb potential for wannier orbitals between the (0,0) and (a1,a2) cells
+FUNCTION bare_coulomb(a1,a2,eps)
+implicit none
+integer, intent(in) :: a1, a2
+real(8), dimension(NB,NB) :: bare_coulomb
+real(8), intent(in) :: eps
+real(8), parameter :: pi=3.14159265359d0
+real(8), parameter :: e=1.6d-19            ! charge of an electron (C)
+real(8), parameter :: epsilon0=8.85e-12    ! Permittivity of free space (m^-3 kg^-1 s^4 A^2)
+real(8) :: r(3)
+integer :: i,j
+do i=1,NB
+    do j=1,NB
+        r = dble(a1)*alpha + dble(a2)*beta + wannier_center(:,i) - wannier_center(:,j)
+        if (norm(r) .lt. 1e-3) then
+            bare_coulomb(i,j) = dcmplx(0.0d0,0.0d0)
+        else
+            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
+        end if
+    end do
+end do
+END FUNCTION bare_coulomb
 
 !!! construct the Ribbon structure Hamiltonian's diagonal and off-diagonal blocks
 SUBROUTINE w90_MAT_DEF_ribbon_simple(Hii,H1i,nn,width,axis)
