@@ -108,7 +108,11 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     if (nx .eq. 1) then
         nkx = 1
     end if
-    dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+    if (nky > 1) then 
+        dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
+    else 
+        dky = 2 * pi / Ly
+    end if
     allocate(energ(nb,nkx*nky))
     allocate(ind(nb))
     call w90_PLOT_BZ(nkx,nky,energ)
@@ -117,6 +121,10 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     VBM = energ(nvb,ind(nvb))
     ind = minloc(energ,2)
     kt_cbm = mod(ind(nvb+1),nkx)*dky - pi / Ly ! k transverse corresponding to CBM
+    if (ny .eq. 1) then
+        kt_cbm=0.0d0
+        kt_vbm=0.0d0
+    end if
     CBM = energ(nvb+1,ind(nvb+1))
     Eg = CBM-VBM
     print '(3A8)','CBM','VBM','Eg'
