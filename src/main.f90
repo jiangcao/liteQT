@@ -208,32 +208,32 @@ if (ltrans) then
     end do
     nm_dev=nb*length
     
-    do iter = 1,2
+    do iter = 0,1
         !
         print *, 'calc G'
         call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/VBM,CBM/),(/300.0d0,300.0d0/))
         !
         print *, 'calc P'
-        call green_calc_polarization(nen,1,nen,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater)    
+        call green_calc_polarization(nen,100,150,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater)    
         !
         print *, 'calc W'
-        call green_calc_w(nen,1,nen,En,nm_dev,V,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+        call green_calc_w(nen,100,150,En,nm_dev,NS*NB,V,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
         !
         print *, 'calc SigGW'
-        call green_calc_gw_selfenergy(nen,1,nen,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater)
+        call green_calc_gw_selfenergy(nen,100,150,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater)
         !
-        open(unit=11,file='ldos'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=12,file='pdos'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=13,file='ndos'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=14,file='P_r'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=15,file='P_lesser'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=16,file='P_greater'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=17,file='W_r'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=18,file='W_lesser'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=19,file='W_greater'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=20,file='Sig_r'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=21,file='Sig_lesser'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=22,file='Sig_greater'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=11,file='ldos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=12,file='pdos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=13,file='ndos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=14,file='P_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=15,file='P_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=16,file='P_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=17,file='W_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=18,file='W_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=19,file='W_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=20,file='Sig_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=21,file='Sig_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+        open(unit=22,file='Sig_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
         do i = 1,nen
             do j = 1,length
                 ldos=0.0d0
@@ -269,17 +269,17 @@ if (ltrans) then
                 write(12,'(3F15.4)') j*Lx, en(i) , -aimag(pdos)
                 write(13,'(3F15.4)') j*Lx, en(i) , aimag(ndos)
                 !
-                write(14,'(3F15.4)') j*Lx, en(i)-en(1) , -aimag(prT)
-                write(15,'(3F15.4)') j*Lx, en(i)-en(1) ,  aimag(plT)
-                write(16,'(3F15.4)') j*Lx, en(i)-en(1) , -aimag(pgT)
+                write(14,'(4F15.4)') j*Lx, en(i)-en(1) , dble(prT), aimag(prT)
+                write(15,'(4F15.4)') j*Lx, en(i)-en(1) , dble(plT), aimag(plT)
+                write(16,'(4F15.4)') j*Lx, en(i)-en(1) , dble(pgT), aimag(pgT)
                 !
-                write(17,'(3F15.4)') j*Lx, en(i)-en(1) , -aimag(wrT)
-                write(18,'(3F15.4)') j*Lx, en(i)-en(1) ,  aimag(wlT)
-                write(19,'(3F15.4)') j*Lx, en(i)-en(1) , -aimag(wgT)
+                write(17,'(4F15.4)') j*Lx, en(i)-en(1) , dble(wrT), aimag(wrT)
+                write(18,'(4F15.4)') j*Lx, en(i)-en(1) , dble(wlT), aimag(wlT)
+                write(19,'(4F15.4)') j*Lx, en(i)-en(1) , dble(wgT), aimag(wgT)
                 !
-                write(20,'(3F15.4)') j*Lx, en(i) , -aimag(srT)
-                write(21,'(3F15.4)') j*Lx, en(i) ,  aimag(slT)
-                write(22,'(3F15.4)') j*Lx, en(i) , -aimag(sgT)
+                write(20,'(4F15.4)') j*Lx, en(i) , dble(srT), aimag(srT)
+                write(21,'(4F15.4)') j*Lx, en(i) , dble(slT), aimag(slT)
+                write(22,'(4F15.4)') j*Lx, en(i) , dble(sgT), aimag(sgT)
             end do
             write(11,*)
             write(12,*)
@@ -307,7 +307,35 @@ if (ltrans) then
         close(21)
         close(22)
     end do
-        
+    !
+    iter = 2
+    print *, 'calc G'
+    call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/VBM,CBM/),(/300.0d0,300.0d0/))
+    open(unit=11,file='ldos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+    open(unit=12,file='pdos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+    open(unit=13,file='ndos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+    do i = 1,nen
+        do j = 1,length
+            ldos=0.0d0
+            pdos=0.0d0
+            ndos=0.0d0
+            do ib=1,nb
+                ldos = ldos+ G_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+                ndos = ndos+ G_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+                pdos = pdos+ G_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+            end do
+            write(11,'(3F15.4)') j*Lx, en(i) , -aimag(ldos)
+            write(12,'(3F15.4)') j*Lx, en(i) , -aimag(pdos)
+            write(13,'(3F15.4)') j*Lx, en(i) , aimag(ndos)
+        end do
+        write(11,*)
+        write(12,*)
+        write(13,*)
+    end do
+    close(11)
+    close(12)
+    close(13)    
+    !
     deallocate(pot)
     deallocate(H00ld)
     deallocate(H10ld) 
