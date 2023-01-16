@@ -7,11 +7,12 @@ real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
-complex(8), allocatable :: H00(:,:),H10(:,:),Hii(:,:),H1i(:,:,:),BHii(:,:),BH1i(:,:,:),Ham(:,:),BHam(:,:),H00ld(:,:,:),H10ld(:,:,:),T(:,:,:),V(:,:),invV(:,:)
+complex(8), allocatable :: H00(:,:),H10(:,:),Hii(:,:),H1i(:,:,:),BHii(:,:),BH1i(:,:,:),Ham(:,:),BHam(:,:),H00ld(:,:,:),H10ld(:,:,:),T(:,:,:),V(:,:),invV(:,:),V2(:,:),invV2(:,:)
 complex(8), allocatable :: G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:)
 complex(8), allocatable :: P_retarded(:,:,:),P_lesser(:,:,:),P_greater(:,:,:)
 complex(8), allocatable :: W_retarded(:,:,:),W_lesser(:,:,:),W_greater(:,:,:)
 complex(8), allocatable :: Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:)
+complex(8), allocatable :: Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:)
 complex(8)::ldos,pdos,ndos,prT,plT,pgT,wrT,wlT,wgT,srT,slT,sgT
 logical :: reorder_axis, ltrans, lreadpot, lqdot
 integer :: nen
@@ -20,6 +21,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter
+real(8) :: eps_screen
 
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -42,6 +44,7 @@ if (ltrans) then
 end if
 read(10,*) lqdot
 read(10,*) niter
+read(10,*) eps_screen
 close(10)
 
 open(unit=10,file='ham_dat',status='unknown')
@@ -129,6 +132,8 @@ if (ltrans) then
     allocate(Ham(nb*length,nb*length))
     allocate(V(nb*length*3,nb*length*3))
     allocate(invV(nb*length*3,nb*length*3))
+    allocate(V2(nb*length,nb*length))
+    allocate(invV2(nb*length,nb*length))
     allocate(pot(length))
     allocate(H00ld(nb*NS,nb*NS,2))
     allocate(H10ld(nb*NS,nb*NS,2))
@@ -170,6 +175,10 @@ if (ltrans) then
     allocate(Sig_lesser(nb*length,nb*length,nen))
     allocate(Sig_greater(nb*length,nb*length,nen))
     
+    allocate(Sig_retarded_new(nb*length,nb*length,nen))
+    allocate(Sig_lesser_new(nb*length,nb*length,nen))
+    allocate(Sig_greater_new(nb*length,nb*length,nen))
+    
     Sig_retarded = dcmplx(0.0d0,0.0d0)
     Sig_lesser = dcmplx(0.0d0,0.0d0)
     Sig_greater = dcmplx(0.0d0,0.0d0)
@@ -178,25 +187,25 @@ if (ltrans) then
     ! device Ham matrix
     call w90_MAT_DEF_full_device(Ham,kt_CBM,length)
     ! Coulomb operator
-    call w90_bare_coulomb_full_device(V,0.0d0,length*3,1.0d0)
+    call w90_bare_coulomb_full_device(V,0.0d0,length*3,eps_screen)
     !
-    open(unit=11,file='V.dat',status='unknown')
-    do i=1, size(V,1)
-        do j=1, size(V,2)
-            write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
-        end do
-        write(11,*)
-    end do
-    close(11)
+    !open(unit=11,file='V.dat',status='unknown')
+    !do i=1, size(V,1)
+    !    do j=1, size(V,2)
+    !        write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
+    !    end do
+    !    write(11,*)
+    !end do
+    !close(11)
     !
-    open(unit=11,file='Ham.dat',status='unknown')
-    do i=1, size(Ham,1)
-        do j=1, size(Ham,2)
-            write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j)), aimag(Ham(i,j))
-        end do
-        write(11,*)
-    end do
-    close(11)
+    !open(unit=11,file='Ham.dat',status='unknown')
+    !do i=1, size(Ham,1)
+    !    do j=1, size(Ham,2)
+    !        write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j)), aimag(Ham(i,j))
+    !    end do
+    !    write(11,*)
+    !end do
+    !close(11)
     ! add on potential    
     do j = 1,length
         do ib = 1,nb
@@ -211,28 +220,36 @@ if (ltrans) then
     nm_dev=nb*length
     
     invV=V
-    call green_subspace_invert(nm_dev*3,invV,NS*nb*5,'sancho')
-    open(unit=11,file='inv_V.dat',status='unknown')
-    do i=1, size(V,1)
-        do j=1, size(V,2)
-            write(11,'(2I6,2F15.4)') i,j, dble(invV(i,j)), aimag(invV(i,j))
-        end do
-        write(11,*)
-    end do
-    close(11)
+    call green_subspace_invert(nm_dev*3,invV,NS*nb*2,'sancho')
+    !open(unit=11,file='inv_V.dat',status='unknown')
+    !do i=1, size(V,1)
+    !    do j=1, size(V,2)
+    !        write(11,'(2I6,2E18.4)') i,j, dble(invV(i,j)), aimag(invV(i,j))
+    !    end do
+    !    write(11,*)
+    !end do
+    !close(11)
+    V2=V(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
+    invV2=invV(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
     do iter = 0,niter
         !
         print *, 'calc G'
-        call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/VBM,VBM/),(/300.0d0,300.0d0/))
+        call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/(VBM),(VBM)/),(/300.0d0,300.0d0/))
         !
-        print *, 'calc P'
-        call green_calc_polarization(nen,nen/2-10,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater)    
-        !
-        print *, 'calc W'
-        call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2),invV(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2),P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
-        !
-        print *, 'calc SigGW'
-        call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater)
+        if (iter .lt. niter) then
+            print *, 'calc P'
+            call green_calc_polarization(nen,nen/2-10,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS)    
+            !
+            print *, 'calc W'
+            call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V2,invV2,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+            !
+            print *, 'calc SigGW'
+            call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS)
+            !
+            Sig_retarded = Sig_retarded+ 0.5d0 * (Sig_retarded_new -Sig_retarded)
+            Sig_lesser = Sig_lesser+ 0.5d0 * (Sig_lesser_new -Sig_lesser)
+            Sig_greater = Sig_greater+ 0.5d0 * (Sig_greater_new -Sig_greater)
+        endif
         !
         open(unit=11,file='ldos_'//TRIM(STRING(iter))//'.dat',status='unknown')
         open(unit=12,file='pdos_'//TRIM(STRING(iter))//'.dat',status='unknown')
@@ -277,21 +294,21 @@ if (ltrans) then
                     slT = slT+ Sig_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
                     sgT = sgT+ Sig_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
                 end do
-                write(11,'(3F15.4)') j*Lx, en(i) , -aimag(ldos)
-                write(12,'(3F15.4)') j*Lx, en(i) , -aimag(pdos)
-                write(13,'(3F15.4)') j*Lx, en(i) , aimag(ndos)
+                write(11,'(4E18.4)') j*Lx, en(i) , -aimag(ldos)*2.0d0 , dble(ldos)
+                write(12,'(4E18.4)') j*Lx, en(i) , -aimag(pdos) , dble(pdos)
+                write(13,'(4E18.4)') j*Lx, en(i) , aimag(ndos) , dble(ndos)
                 !
-                write(14,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(prT), aimag(prT)
-                write(15,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(plT), aimag(plT)
-                write(16,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(pgT), aimag(pgT)
+                write(14,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(prT), aimag(prT)
+                write(15,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(plT), aimag(plT)
+                write(16,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(pgT), aimag(pgT)
                 !
-                write(17,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(wrT), aimag(wrT)
-                write(18,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(wlT), aimag(wlT)
-                write(19,'(4F15.4)') j*Lx, en(i)-en(nen/2) , dble(wgT), aimag(wgT)
+                write(17,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wrT), aimag(wrT)
+                write(18,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wlT), aimag(wlT)
+                write(19,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wgT), aimag(wgT)
                 !
-                write(20,'(4F15.4)') j*Lx, en(i) , dble(srT), aimag(srT)
-                write(21,'(4F15.4)') j*Lx, en(i) , dble(slT), aimag(slT)
-                write(22,'(4F15.4)') j*Lx, en(i) , dble(sgT), aimag(sgT)
+                write(20,'(4E18.4)') j*Lx, en(i) , dble(srT), aimag(srT)
+                write(21,'(4E18.4)') j*Lx, en(i) , dble(slT), aimag(slT)
+                write(22,'(4E18.4)') j*Lx, en(i) , dble(sgT), aimag(sgT)
             end do
             write(11,*)
             write(12,*)
@@ -317,7 +334,7 @@ if (ltrans) then
         close(19)
         close(20)
         close(21)
-        close(22)
+        close(22)        
     end do
     !
     deallocate(pot)
@@ -326,6 +343,8 @@ if (ltrans) then
     deallocate(Ham)
     deallocate(V)
     deallocate(invV)
+    deallocate(V2)
+    deallocate(invV2)
     deallocate(T)
     deallocate(G_retarded)
     deallocate(G_lesser)

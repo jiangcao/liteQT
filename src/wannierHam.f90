@@ -83,14 +83,15 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     Ly=abs(dot_product(beta,yhat)); ! L is in unit of A
     Lx=abs(dot_product(alpha,xhat));
     print '(A40)', 'reading Wannier H from file, info:'
-    print '(6i4)', xmin, xmax, ymin, ymax, nb, nvb
+    print '(6a5)', 'xmin', 'xmax', 'ymin', 'ymax', 'nb', 'nvb'
+    print '(6i5)', xmin, xmax, ymin, ymax, nb, nvb
     print '(2f5.1)', Lx, Ly
-    print *, 'a1, a2='
+    print *, 'a1, a2 ='
     print '(3f5.1)', alpha
     print '(3f5.1)', beta
     b1=cross(beta,gamm)/dot_product(alpha,cross(beta,gamm))
     b2 = cross(gamm,alpha)/dot_product(beta,cross(gamm,alpha))
-    print *, 'b1, b2='
+    print *, 'b1, b2 ='
     print '(3f5.1)', b1
     print '(3f5.1)', b2
     allocate(Hr(nb,nb,nx,ny))
@@ -129,8 +130,8 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     Eg = CBM-VBM
     print '(3A8)','CBM','VBM','Eg'
     print '(3f8.3)', CBM, VBM, CBM-VBM
-    print '(2A8)','kt_CBM','kt_VBM'
-    print '(2f8.3)', kt_cbm, kt_vbm
+    print '(2A8)','kt_CBM','kt_VBM [2pi/Ly]'
+    print '(2f8.3)', kt_cbm/(2.0*pi/Ly), kt_vbm/(2.0*pi/Ly)
     print '(A40)', 'reading Wannier centers from file'
     read(fid,*) comment    
     allocate(wannier_center(3,nb))
@@ -296,21 +297,23 @@ real(8), intent(in) :: ky
 complex(8), intent(out), dimension(NB*length,NB*length) :: Ham
 integer :: i,j, k
 real(8), dimension(3) :: kv, r
+complex(8) :: phi
 Ham = dcmplx(0.0d0,0.0d0)
 do i = 1, length
     do k = 1, length
         do j = ymin,ymax
             kv = ky*yhat
             r =  dble(i-k)*alpha + dble(j)*beta                    
+            phi = -z1j* dot_product(r,kv)
             if (present(NS)) then
-                if ((i-k <= NS ) .and. (i-k >= -NS )) then                
+                if ((i-k <= min(NS,xmax) ) .and. (i-k >= max(-NS,xmin) )) then                
                     Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                    & Hr(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) )           
+                    & Hr(:,:,i-k-xmin+1,j-ymin+1) * exp( phi )           
                 end if                 
             else
                 if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
                     Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                    & Hr(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) )           
+                    & Hr(:,:,i-k-xmin+1,j-ymin+1) * exp( phi )           
                 end if                 
             end if
         end do
@@ -368,14 +371,14 @@ do i=1,NB
         end if
     end do
 end do
-if  (a1 .ne. a2) then
+if  (abs(a1) .gt. 0) then
     bare_coulomb = 0.0d0
 else
-    maxV=maxval(bare_coulomb)*0.1
-    bare_coulomb=0.0d0
-    do i=1,NB
-        bare_coulomb(i,i)=maxV
-    enddo
+   ! maxV=maxval(bare_coulomb)
+   ! bare_coulomb=0.0d0
+   ! do i=1,NB
+   !     bare_coulomb(i,i)=maxV
+   ! enddo
 endif
 END FUNCTION bare_coulomb
 
