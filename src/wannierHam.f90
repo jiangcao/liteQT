@@ -130,7 +130,7 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     Eg = CBM-VBM
     print '(3A8)','CBM','VBM','Eg'
     print '(3f8.3)', CBM, VBM, CBM-VBM
-    print '(2A8)','kt_CBM','kt_VBM [2pi/Ly]'
+    print '(3A8)','kt_CBM','kt_VBM','2pi/Ly'
     print '(2f8.3)', kt_cbm/(2.0*pi/Ly), kt_vbm/(2.0*pi/Ly)
     print '(A40)', 'reading Wannier centers from file'
     read(fid,*) comment    
@@ -365,21 +365,21 @@ do i=1,NB
     do j=1,NB
         r = dble(a1)*alpha + dble(a2)*beta + wannier_center(:,i) - wannier_center(:,j)
         if (norm(r) .lt. 1.0d0) then
-            bare_coulomb(i,j) = dcmplx(0.0d0,0.0d0)
+            bare_coulomb(i,j) = dcmplx(0.5d0,0.0d0)
         else
             bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
         end if
     end do
 end do
-if  (abs(a1) .gt. 0) then
-    bare_coulomb = 0.0d0
-else
-   ! maxV=maxval(bare_coulomb)
-   ! bare_coulomb=0.0d0
-   ! do i=1,NB
-   !     bare_coulomb(i,i)=maxV
-   ! enddo
-endif
+ ! if  (abs(a1) .gt. 1) then
+ !   bare_coulomb = 0.0d0
+ ! else
+ !   maxV=maxval(bare_coulomb)
+ !   bare_coulomb=0.0d0
+ !   do i=1,NB
+ !       bare_coulomb(i,i)=maxV
+ !   enddo
+ ! endif
 END FUNCTION bare_coulomb
 
 !!! construct the Ribbon structure Hamiltonian's diagonal and off-diagonal blocks

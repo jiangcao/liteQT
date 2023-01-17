@@ -1,6 +1,6 @@
 PROGRAM main
 USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM
-use green, only : green_calc_g, green_calc_polarization, green_calc_w, green_calc_gw_selfenergy,green_subspace_invert
+use green, only : green_calc_g, green_calc_polarization, green_calc_w, green_calc_gw_selfenergy,green_subspace_invert,green_solve_gw_1D
 use mod_string, only : string
 implicit none
 real(8), parameter :: pi=3.14159265359d0
@@ -21,7 +21,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter
-real(8) :: eps_screen
+real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix
 
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -36,15 +36,18 @@ read(10,*) reorder_axis
 if (reorder_axis) then
     read(10,*) xyz
 end if    
+read(10,*) lqdot
 read(10,*) ltrans
 if (ltrans) then
     read(10,*) length
     read(10,*) emin, emax, nen
     read(10,*) lreadpot
+    read(10,*) niter
+    read(10,*) eps_screen
+    read(10,*) mus,mud
+    read(10,*) temps, tempd
+    read(10,*) alpha_mix
 end if
-read(10,*) lqdot
-read(10,*) niter
-read(10,*) eps_screen
 close(10)
 
 open(unit=10,file='ham_dat',status='unknown')
@@ -189,14 +192,14 @@ if (ltrans) then
     ! Coulomb operator
     call w90_bare_coulomb_full_device(V,0.0d0,length*3,eps_screen)
     !
-    !open(unit=11,file='V.dat',status='unknown')
-    !do i=1, size(V,1)
-    !    do j=1, size(V,2)
-    !        write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
-    !    end do
-    !    write(11,*)
-    !end do
-    !close(11)
+!    open(unit=11,file='V.dat',status='unknown')
+!    do i=1, size(V,1)
+!        do j=1, size(V,2)
+!            write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
+!        end do
+!        write(11,*)
+!    end do
+!    close(11)
     !
     !open(unit=11,file='Ham.dat',status='unknown')
     !do i=1, size(Ham,1)
@@ -221,121 +224,130 @@ if (ltrans) then
     
     invV=V
     call green_subspace_invert(nm_dev*3,invV,NS*nb*2,'sancho')
-    !open(unit=11,file='inv_V.dat',status='unknown')
-    !do i=1, size(V,1)
-    !    do j=1, size(V,2)
-    !        write(11,'(2I6,2E18.4)') i,j, dble(invV(i,j)), aimag(invV(i,j))
-    !    end do
-    !    write(11,*)
-    !end do
-    !close(11)
+    
+!    open(unit=11,file='inv_V.dat',status='unknown')
+!    do i=1, size(V,1)
+!        do j=1, size(V,2)
+!            write(11,'(2I6,2E18.4)') i,j, dble(invV(i,j)), aimag(invV(i,j))
+!        end do
+!        write(11,*)
+!    end do
+!    close(11)
+    
     V2=V(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
     invV2=invV(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
-    do iter = 0,niter
-        !
-        print *, 'calc G'
-        call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/(VBM),(VBM)/),(/300.0d0,300.0d0/))
-        !
-        if (iter .lt. niter) then
-            print *, 'calc P'
-            call green_calc_polarization(nen,nen/2-10,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS)    
-            !
-            print *, 'calc W'
-            call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V2,invV2,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
-            !
-            print *, 'calc SigGW'
-            call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS)
-            !
-            Sig_retarded = Sig_retarded+ 0.5d0 * (Sig_retarded_new -Sig_retarded)
-            Sig_lesser = Sig_lesser+ 0.5d0 * (Sig_lesser_new -Sig_lesser)
-            Sig_greater = Sig_greater+ 0.5d0 * (Sig_greater_new -Sig_greater)
-        endif
-        !
-        open(unit=11,file='ldos_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=12,file='pdos_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=13,file='ndos_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=14,file='P_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=15,file='P_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=16,file='P_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=17,file='W_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=18,file='W_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=19,file='W_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=20,file='Sig_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=21,file='Sig_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        open(unit=22,file='Sig_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
-        do i = 1,nen
-            do j = 1,length
-                ldos=0.0d0
-                pdos=0.0d0
-                ndos=0.0d0
-                prT=0.0d0
-                plT=0.0d0
-                pgT=0.0d0
-                wrT=0.0d0
-                wlT=0.0d0
-                wgT=0.0d0
-                srT=0.0d0
-                slT=0.0d0
-                sgT=0.0d0
-                do ib=1,nb
-                    ldos = ldos+ G_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    ndos = ndos+ G_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    pdos = pdos+ G_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    ! P
-                    prT = prT+ P_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    plT = plT+ P_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    pgT = pgT+ P_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    ! W
-                    wrT = wrT+ W_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    wlT = wlT+ W_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    wgT = wgT+ W_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    ! Sig
-                    srT = srT+ Sig_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    slT = slT+ Sig_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
-                    sgT = sgT+ Sig_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
-                end do
-                write(11,'(4E18.4)') j*Lx, en(i) , -aimag(ldos)*2.0d0 , dble(ldos)
-                write(12,'(4E18.4)') j*Lx, en(i) , -aimag(pdos) , dble(pdos)
-                write(13,'(4E18.4)') j*Lx, en(i) , aimag(ndos) , dble(ndos)
-                !
-                write(14,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(prT), aimag(prT)
-                write(15,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(plT), aimag(plT)
-                write(16,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(pgT), aimag(pgT)
-                !
-                write(17,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wrT), aimag(wrT)
-                write(18,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wlT), aimag(wlT)
-                write(19,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wgT), aimag(wgT)
-                !
-                write(20,'(4E18.4)') j*Lx, en(i) , dble(srT), aimag(srT)
-                write(21,'(4E18.4)') j*Lx, en(i) , dble(slT), aimag(slT)
-                write(22,'(4E18.4)') j*Lx, en(i) , dble(sgT), aimag(sgT)
-            end do
-            write(11,*)
-            write(12,*)
-            write(13,*)
-            write(14,*)
-            write(15,*)
-            write(16,*)
-            write(17,*)
-            write(18,*)
-            write(19,*)
-            write(20,*)
-            write(21,*)
-            write(22,*)
-        end do
-        close(11)
-        close(12)
-        close(13)
-        close(14)
-        close(15)
-        close(16)
-        close(17)
-        close(18)
-        close(19)
-        close(20)
-        close(21)
-        close(22)        
-    end do
+    !
+    call green_solve_gw_1D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
+        alpha_mix,nen,En,nb,ns,Ham,H00ld,H10ld,T,V2,invV2,&
+        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+        Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+    
+!    do iter = 0,niter
+!        !
+!        print *, 'calc G'
+!        call green_calc_g(nen,En,2,nb*length,(/nb*ns,nb*ns/),nb*ns,Ham,H00ld,H10ld,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/ mus, mud /),(/300.0d0,300.0d0/))
+!        !
+!        if (iter .lt. niter) then
+!            print *, 'calc P'
+!            call green_calc_polarization(nen,nen/2-10,En,nb*length,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS)    
+!            !
+!            print *, 'calc W'
+!            call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V2,invV2,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+!            !
+!            print *, 'calc SigGW'
+!            call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS)
+!            !
+!            Sig_retarded = Sig_retarded+ 0.5d0 * (Sig_retarded_new -Sig_retarded)
+!            Sig_lesser = Sig_lesser+ 0.5d0 * (Sig_lesser_new -Sig_lesser)
+!            Sig_greater = Sig_greater+ 0.5d0 * (Sig_greater_new -Sig_greater)
+!        endif
+!        !
+!        open(unit=11,file='ldos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=12,file='pdos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=13,file='ndos_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=14,file='P_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=15,file='P_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=16,file='P_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=17,file='W_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=18,file='W_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=19,file='W_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=20,file='Sig_r_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=21,file='Sig_lesser_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        open(unit=22,file='Sig_greater_'//TRIM(STRING(iter))//'.dat',status='unknown')
+!        do i = 1,nen
+!            do j = 1,length
+!                ldos=0.0d0
+!                pdos=0.0d0
+!                ndos=0.0d0
+!                prT=0.0d0
+!                plT=0.0d0
+!                pgT=0.0d0
+!                wrT=0.0d0
+!                wlT=0.0d0
+!                wgT=0.0d0
+!                srT=0.0d0
+!                slT=0.0d0
+!                sgT=0.0d0
+!                do ib=1,nb
+!                    ldos = ldos+ G_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    ndos = ndos+ G_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    pdos = pdos+ G_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    ! P
+!                    prT = prT+ P_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    plT = plT+ P_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    pgT = pgT+ P_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    ! W
+!                    wrT = wrT+ W_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    wlT = wlT+ W_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    wgT = wgT+ W_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    ! Sig
+!                    srT = srT+ Sig_retarded((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    slT = slT+ Sig_lesser((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                    sgT = sgT+ Sig_greater((j-1)*nb+ib,(j-1)*nb+ib,i)
+!                end do
+!                write(11,'(4E18.4)') j*Lx, en(i) , -aimag(ldos)*2.0d0 , dble(ldos)
+!                write(12,'(4E18.4)') j*Lx, en(i) , -aimag(pdos) , dble(pdos)
+!                write(13,'(4E18.4)') j*Lx, en(i) , aimag(ndos) , dble(ndos)
+!                !
+!                write(14,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(prT), aimag(prT)
+!                write(15,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(plT), aimag(plT)
+!                write(16,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(pgT), aimag(pgT)
+!                !
+!                write(17,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wrT), aimag(wrT)
+!                write(18,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wlT), aimag(wlT)
+!                write(19,'(4E18.4)') j*Lx, en(i)-en(nen/2) , dble(wgT), aimag(wgT)
+!                !
+!                write(20,'(4E18.4)') j*Lx, en(i) , dble(srT), aimag(srT)
+!                write(21,'(4E18.4)') j*Lx, en(i) , dble(slT), aimag(slT)
+!                write(22,'(4E18.4)') j*Lx, en(i) , dble(sgT), aimag(sgT)
+!            end do
+!            write(11,*)
+!            write(12,*)
+!            write(13,*)
+!            write(14,*)
+!            write(15,*)
+!            write(16,*)
+!            write(17,*)
+!            write(18,*)
+!            write(19,*)
+!            write(20,*)
+!            write(21,*)
+!            write(22,*)
+!        end do
+!        close(11)
+!        close(12)
+!        close(13)
+!        close(14)
+!        close(15)
+!        close(16)
+!        close(17)
+!        close(18)
+!        close(19)
+!        close(20)
+!        close(21)
+!        close(22)        
+!    end do
     !
     deallocate(pot)
     deallocate(H00ld)

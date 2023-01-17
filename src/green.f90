@@ -8,7 +8,7 @@ implicit none
 private
 
 public :: green_calc_g, green_calc_polarization, green_calc_w, green_calc_gw_selfenergy, green_rgf_cms
-public :: green_subspace_invert
+public :: green_subspace_invert,green_solve_gw_1D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -220,6 +220,52 @@ end subroutine green_RGF_CMS
 
 
 
+! driver for iterating G -> P -> W -> Sig 
+subroutine green_solve_gw_1D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,invV,&
+  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+  W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+  Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+implicit none
+integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx
+complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
+complex(8), intent(in):: V(nm_dev,nm_dev),invV(nm_dev,nm_dev)
+complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+integer :: iter
+do iter=0,niter
+  print *, 'calc G'
+  call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/ mus, mud /),(/temps,tempd/))
+  call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
+  call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  !        
+  print *, 'calc P'
+  call green_calc_polarization(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS)    
+  call write_spectrum('PR',iter,P_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('PL',iter,P_lesser  ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('PG',iter,P_greater ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  !
+  print *, 'calc W'
+  call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V,invV,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  !
+  print *, 'calc SigGW'
+  call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS)
+  !
+  Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
+  Sig_lesser = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
+  Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)
+  call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+enddo                
+end subroutine green_solve_gw_1D
+
+
+
 ! hw from 0 to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<_ij(hw) + G^<>_ij(E+hw) W^>_ji(hw)
 ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
 ! since W^<_ij(hw) = W^>ji(-hw)
@@ -308,15 +354,15 @@ do nop=-nopmax+ne/2,nopmax+ne/2
   ! get OBC on left  
   V00 = inv_V(1:nm_lead,1:nm_lead) - P_retarded(1:nm_lead,1:nm_lead,nop)
   V10 = inv_V(nm_lead+1:2*nm_lead,1:nm_lead) 
-  call sancho(nm_lead,z,S00,V00,V10,G00,GBB)
-  !G00=V(1:nm_lead,1:nm_lead)
+  !call sancho(nm_lead,z,S00,V00,V10,G00,GBB)
+  G00=V(1:nm_lead,1:nm_lead)
   call zgemm('n','n',nm_lead,nm_lead,nm_lead,cone,V10,nm_lead,G00,nm_lead,czero,A,nm_lead) 
   call zgemm('n','c',nm_lead,nm_lead,nm_lead,cone,A,nm_lead,V10,nm_lead,czero,sigmal,nm_lead)  
   ! get OBC on right
   V00 = inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev) - P_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop)
   V10 = inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-2*nm_lead+1:nm_dev-nm_lead)
-  call sancho(nm_lead,z,S00,V00,transpose(conjg(V10)),G00,GBB)
-  !G00=V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev)
+  !call sancho(nm_lead,z,S00,V00,transpose(conjg(V10)),G00,GBB)
+  G00=V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev)
   call zgemm('c','n',nm_lead,nm_lead,nm_lead,cone,V10,nm_lead,G00,nm_lead,czero,A,nm_lead) 
   call zgemm('n','n',nm_lead,nm_lead,nm_lead,cone,A,nm_lead,V10,nm_lead,czero,sigmar,nm_lead)  
   ! add boundary
@@ -459,12 +505,7 @@ do ie = 1, ne
     if (present(G_greater)) then
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded(:,:,ie),nm_dev,sig_greater,nm_dev,czero,B,nm_dev) 
       call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded(:,:,ie),nm_dev,czero,C,nm_dev)
-      G_greater(:,:,ie) = C
-      
-      !B(:,:) = conjg(G_retarded(:,:,ie))
-      !G_greater(:,:,ie) = transpose(B(:,:))
-      !B(:,:) = G_retarded(:,:,ie)-G_greater(:,:,ie)
-      !G_greater(:,:,ie) = C + B
+      G_greater(:,:,ie) = C      
     end if      
   end if 
 end do  
@@ -475,6 +516,28 @@ end if
 G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
 end subroutine green_calc_g
 
+! write spectrum into file (pm3d map)
+subroutine write_spectrum(dataset,i,G,nen,en,length,NB,Lx,coeff)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(:,:,:)
+integer, intent(in)::i,nen,length,NB
+real(8), intent(in)::Lx,en(nen),coeff(2)
+integer:: ie,j,ib
+complex(8)::tr
+open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+do ie = 1,nen
+    do j = 1,length
+        tr=0.0d0          
+        do ib=1,nb
+            tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie)            
+        end do
+        write(11,'(4E18.4)') j*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+    end do
+    write(11,*)    
+end do
+close(11)
+end subroutine write_spectrum
+
 
 ! Sancho-Rubio 
 subroutine sancho(nm,E,S00,H00,H10,G00,GBB)
@@ -484,7 +547,7 @@ implicit none
   integer i,j,k,nm,nmax
   COMPLEX(8) :: z
   real(8) :: E,error
-  REAL(8) :: TOL=1.0D-100  ! [eV]
+  REAL(8) :: TOL=1.0D-10  ! [eV]
   COMPLEX(8), INTENT(IN) ::  S00(nm,nm), H00(nm,nm), H10(nm,nm)
   COMPLEX(8), INTENT(OUT) :: G00(nm,nm), GBB(nm,nm)
   COMPLEX(8), ALLOCATABLE :: A(:,:), B(:,:), C(:,:), tmp(:,:)
@@ -500,7 +563,7 @@ implicit none
   Allocate( B(nm,nm) )
   Allocate( C(nm,nm) )
   Allocate( tmp(nm,nm) )
-  nmax=100
+  nmax=200
   z = cmplx(E,1.0d-3)
   Id=0.0d0
   tmp=0.0d0
@@ -655,5 +718,23 @@ Function ferm(a)
 	Real (8) a,ferm
 	ferm=1.0d0/(1.0d0+Exp(a))
 End Function ferm
+
+
+FUNCTION STRING(inn)
+  IMPLICIT NONE
+  INTEGER, PARAMETER :: POS= 4
+  INTEGER, INTENT(IN) :: inn
+  CHARACTER(LEN=POS) :: STRING
+  !............................................................
+  INTEGER :: cifra, np, mm, num  
+  IF (inn > (10**POS)-1) stop "ERRORE: (inn > (10**3)-1)  in STRING"
+  num= inn
+  DO np= 1, POS
+     mm= pos-np
+     cifra= num/(10**mm)            
+     STRING(np:np)= ACHAR(48+cifra)
+     num= num - cifra*(10**mm)
+  END DO
+END FUNCTION STRING
 
 end module green
