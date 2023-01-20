@@ -241,13 +241,13 @@ do iter=0,niter
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
   !        
   print *, 'calc P'
-  call green_calc_polarization(nen,nen/2-20,En,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS*2)    
+  call green_calc_polarization(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS*2)    
   call write_spectrum('PR',iter,P_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('PL',iter,P_lesser  ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('PG',iter,P_greater ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   !
   print *, 'calc W'
-  call green_calc_w(nen,nen/2-20,En,nm_dev,NB*NS*2,V,invV,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+  call green_calc_w(nen,nen/2-10,En,nm_dev,NB*NS*2,V,invV,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
   call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
