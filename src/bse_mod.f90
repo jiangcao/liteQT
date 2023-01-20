@@ -1,5 +1,9 @@
 !!!!!!!!!!!!!!!! AUTHOR: Jiang Cao
 !!!!!!!!!!!!!!!! DATE: 11/2022
+!
+! a part of this module is an implementation of PRB 94, 245434 (2016) B. Scharf
+! et al.
+! 
 
 module bse_mod
 
@@ -32,6 +36,7 @@ else
     aux4=aux3/(1.0d0+aux3);
     aux0=0.577216d0-log(2.0d0);
     wrijvvd=-(log(aux4)+aux0*exp(-aux3))*((e)/(4*pi*epsilon0*r0*1d-10));
+    ! approximate form of the exact function
    !wrijvvd=((e)/(8.*epsilon0.*r0.*1e-10)).*(StruveH0((epsilon.*norm(r))/r0)-bessely(0,((epsilon.*norm(r))/r0))); % in eV, equation 4
    screenedpot = wrijvvd   
 end if
@@ -54,12 +59,6 @@ else
 end if
 barepot=vrijvvd
 end function barepot
-
-! real(8) function efieldpotential(r,F,L,e,k0,xhat)
-! !Function to get the electric field contribution to the potential
-! real(8),intent(in)::r(3),F,L,e,k0,xhat(3)
-! efieldpotential=e*F*dot_product(r,xhat)*(tanh(k0*(0.25d0-(dot_product(r,xhat)/L)**2))) ! implementation of equation 7
-! end function efieldpotential
 
 
 real(8) function efieldpotential(rvvd,e1,F,k0,i,j,alpha,beta,NKX,NKY)

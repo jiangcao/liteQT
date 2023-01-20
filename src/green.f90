@@ -241,19 +241,19 @@ do iter=0,niter
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
   !        
   print *, 'calc P'
-  call green_calc_polarization(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS)    
+  call green_calc_polarization(nen,nen/2-20,En,nm_dev,G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,NB*NS*2)    
   call write_spectrum('PR',iter,P_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('PL',iter,P_lesser  ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('PG',iter,P_greater ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   !
   print *, 'calc W'
-  call green_calc_w(nen,nen/2-10,En,nm_dev,NS*NB,V,invV,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
+  call green_calc_w(nen,nen/2-20,En,nm_dev,NB*NS*2,V,invV,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater)
   call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
   !
   print *, 'calc SigGW'
-  call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS)
+  call green_calc_gw_selfenergy(nen,nen/2-10,En,nm_dev,G_retarded,G_lesser,G_greater,W_retarded,W_lesser,W_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new,NB*NS*2)
   !
   Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
   Sig_lesser = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
@@ -350,25 +350,35 @@ allocate(V00(nm_lead,nm_lead))
 allocate(V10(nm_lead,nm_lead))
 call identity(S00,nm_lead)
 do nop=-nopmax+ne/2,nopmax+ne/2    
+  !print *,nop,E(nop)-E(ne/2),'l'
   ! OBC for (V^-1 - P^r)^-1
   ! get OBC on left  
-  V00 = inv_V(1:nm_lead,1:nm_lead) - P_retarded(1:nm_lead,1:nm_lead,nop)
-  V10 = inv_V(nm_lead+1:2*nm_lead,1:nm_lead) 
-  !call sancho(nm_lead,z,S00,V00,V10,G00,GBB)
-  G00=V(1:nm_lead,1:nm_lead)
+  if ( abs(E(nop)-E(ne/2)).gt.1.0 ) then
+    V00 = -inv_V(1:nm_lead,1:nm_lead)
+  else
+    V00 = -inv_V(1:nm_lead,1:nm_lead) + dcmplx(dble(P_retarded(1:nm_lead,1:nm_lead,nop)),aimag(P_greater(1:nm_lead,1:nm_lead,nop) - P_lesser(1:nm_lead,1:nm_lead,nop)))
+  endif
+  V10 = -inv_V(nm_lead+1:2*nm_lead,1:nm_lead) !+ P_retarded(nm_lead+1:2*nm_lead,1:nm_lead,nop) 
+  call sancho(nm_lead,z,S00,V00,V10,G00,GBB)
+  !G00=V(1:nm_lead,1:nm_lead)
   call zgemm('n','n',nm_lead,nm_lead,nm_lead,cone,V10,nm_lead,G00,nm_lead,czero,A,nm_lead) 
   call zgemm('n','c',nm_lead,nm_lead,nm_lead,cone,A,nm_lead,V10,nm_lead,czero,sigmal,nm_lead)  
+  !print *,nop,E(nop)-E(ne/2),'r'
   ! get OBC on right
-  V00 = inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev) - P_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop)
-  V10 = inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-2*nm_lead+1:nm_dev-nm_lead)
-  !call sancho(nm_lead,z,S00,V00,transpose(conjg(V10)),G00,GBB)
-  G00=V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev)
+  if ( abs(E(nop)-E(ne/2)).gt.1.0 ) then
+    V00 = -inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev)  
+  else
+    V00 = -inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev) + dcmplx(dble(P_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop)),aimag(P_greater(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop) - P_lesser(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop)))   
+  endif
+  V10 = -inv_V(nm_dev-nm_lead+1:nm_dev,nm_dev-2*nm_lead+1:nm_dev-nm_lead) !+ P_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-2*nm_lead+1:nm_dev-nm_lead,nop)
+  call sancho(nm_lead,z,S00,V00,transpose(conjg(V10)),G00,GBB)
+  !G00=V(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev)
   call zgemm('c','n',nm_lead,nm_lead,nm_lead,cone,V10,nm_lead,G00,nm_lead,czero,A,nm_lead) 
   call zgemm('n','n',nm_lead,nm_lead,nm_lead,cone,A,nm_lead,V10,nm_lead,czero,sigmar,nm_lead)  
   ! add boundary
   W_retarded(:,:,nop) = inv_V(:,:)-P_retarded(:,:,nop)
   W_retarded(1:nm_lead,1:nm_lead,nop) = W_retarded(1:nm_lead,1:nm_lead,nop) - sigmal
-  W_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop) = W_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop)-sigmar
+  W_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop) = W_retarded(nm_dev-nm_lead+1:nm_dev,nm_dev-nm_lead+1:nm_dev,nop) - sigmar
   ! calculate (V^-1 - P^r)^-1
   call invert(W_retarded(:,:,nop),nm_dev)
   ! calculate W^< and W^>
@@ -563,7 +573,7 @@ implicit none
   Allocate( B(nm,nm) )
   Allocate( C(nm,nm) )
   Allocate( tmp(nm,nm) )
-  nmax=200
+  nmax=100
   z = cmplx(E,1.0d-3)
   Id=0.0d0
   tmp=0.0d0
