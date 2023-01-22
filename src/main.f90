@@ -194,14 +194,14 @@ if (ltrans) then
     ! Coulomb operator
     call w90_bare_coulomb_full_device(V,0.0d0,length*3,eps_screen)
     
-!    open(unit=11,file='V.dat',status='unknown')
-!    do i=1, size(V,1)
-!        do j=1, size(V,2)
-!            write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
-!        end do
-!        write(11,*)
-!    end do
-!    close(11)
+    open(unit=11,file='V.dat',status='unknown')
+    do i=1, size(V,1)
+        do j=1, size(V,2)
+            write(11,'(2I6,2F15.4)') i,j, dble(V(i,j)), aimag(V(i,j))
+        end do
+        write(11,*)
+    end do
+    close(11)
     !
     !open(unit=11,file='Ham.dat',status='unknown')
     !do i=1, size(Ham,1)
@@ -224,8 +224,8 @@ if (ltrans) then
     end do
     nm_dev=nb*length
     
-    invV=V
-    call green_subspace_invert(nm_dev*3,invV,NS*nb*2,'sancho')
+!    invV=V
+!    call green_subspace_invert(nm_dev*3,invV,NS*nb*2,'sancho')
 
 !    call w90_inverse_bare_coulomb_full_device(invV2,0.0d0,length,eps_screen,20,1)    
 !    open(unit=11,file='inv_V2.dat',status='unknown')
@@ -238,19 +238,22 @@ if (ltrans) then
 !    close(11)    
     
     V2=V(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
-    invV2=invV(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
+ !   invV2=invV(nm_dev+1:nm_dev*2,nm_dev+1:nm_dev*2)
+    
+    deallocate(V)
+    deallocate(invV)
 
-    open(unit=11,file='inv_V.dat',status='unknown')
-    do i=1, size(invV2,1)
-        do j=1, size(invV2,2)
-            write(11,'(2I6,2E18.4)') i,j, dble(invV2(i,j)), aimag(invV2(i,j))
-        end do
-        write(11,*)
-    end do
-    close(11)    
+    !open(unit=11,file='inv_V.dat',status='unknown')
+    !do i=1, size(invV2,1)
+    !    do j=1, size(invV2,2)
+    !        write(11,'(2I6,2E18.4)') i,j, dble(invV2(i,j)), aimag(invV2(i,j))
+    !    end do
+    !    write(11,*)
+    !end do
+    !close(11)    
     !
     call green_solve_gw_1D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,Ham,H00ld,H10ld,T,V2,invV2,&
+        alpha_mix,nen,En,nb,ns,Ham,H00ld,H10ld,T,V2,&
         G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
         W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
         Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
@@ -259,8 +262,6 @@ if (ltrans) then
     deallocate(H00ld)
     deallocate(H10ld) 
     deallocate(Ham)
-    deallocate(V)
-    deallocate(invV)
     deallocate(V2)
     deallocate(invV2)
     deallocate(T)

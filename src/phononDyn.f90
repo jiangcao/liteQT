@@ -6,8 +6,9 @@ MODULE phononDyn
 IMPLICIT NONE
 
 private
-complex(8),allocatable::Phi(:,:,:,:)
-real(8),allocatable::atom_pos(:,:)
+real(8),allocatable::Phi(:,:,:,:,:,:)  ! 2nd order IFC, (dir,dir,a1,a2,x,y)
+real(8),allocatable::atom_pos(:,:) ! atom position
+real(8),allocatable::Ze(:,:,:)   ! Effective charge
 REAL(8), DIMENSION(3) :: alpha,beta,gamm,xhat,yhat,b1,b2
 REAL(8) :: Lx, Ly,cell(3,3) ! in Ang
 INTEGER :: ymin,ymax,xmin,xmax,nx,ny,NA,NB

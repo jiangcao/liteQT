@@ -365,7 +365,7 @@ do i=1,NB
     do j=1,NB
         r = dble(a1)*alpha + dble(a2)*beta + wannier_center(:,i) - wannier_center(:,j)
         if (norm(r) .lt. 1.0d0) then
-            bare_coulomb(i,j) = dcmplx(3.0d0,0.0d0)
+            bare_coulomb(i,j) = 5.0 ! (e)/(4.0d0*pi*epsilon0*eps*1.0d0*1.0d-10)
         else
             bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
         end if
