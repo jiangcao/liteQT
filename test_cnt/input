@@ -1,15 +1,19 @@
-2         !ns
+3         !ns
 1         !width
 200        !nkx
 1         ! num B 
 0.0           !B values
 1   ! axis of ribbon length 
-68  ! num CPU
+128  ! num CPU
 T   ! reorder axis
 3 2 1
-T   ! transport 
-10         !length
--5.0  -2.5   250    ! emin emax num_en
-F   ! read potential from pot_dat
 F   ! quantum dot
+T   ! transport 
+30         !length
+-8.0  -1.0   1000    ! emin emax num_en
+F   ! read potential from pot_dat
 10  ! num iter
+1.0  ! epsilon screening
+-5.0  -5.0  ! mu_s mu_d 
+300.0   300.0  ! temperature 
+0.5   ! alpha mix
