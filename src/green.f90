@@ -325,8 +325,8 @@ do iter=0,niter
           Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie)+dE*G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h,iop)
           Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie)+dE*G_greater(i,l:h,ie-nop)*W_greater(i,l:h,iop)
           Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h,iop) 
-          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*aimag(G_retarded(i,l:h,ie-nop))*W_lesser(i,l:h,iop) 
-          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*aimag(G_retarded(i,l:h,ie-nop))*W_retarded(i,l:h,iop)          
+          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h,iop) 
+          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h,iop)          
         enddo      
       endif
     enddo

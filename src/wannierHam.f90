@@ -7,6 +7,8 @@ IMPLICIT NONE
 
 private 
 COMPLEX(8), ALLOCATABLE :: Hr(:,:,:,:)
+COMPLEX(8), ALLOCATABLE :: rmn(:,:,:,:,:) ! position operator
+COMPLEX(8), ALLOCATABLE :: pmn(:,:,:,:,:) ! momentum operator
 real(8), allocatable :: wannier_center(:,:)
 REAL(8), DIMENSION(3) :: alpha,beta,gamm,xhat,yhat,b1,b2
 REAL(8) :: Lx, Ly,cell(3,3) ! in Ang
@@ -24,11 +26,14 @@ public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_ribbon_add_peierls, w90_MAT_DEF_full_device, w90_MAT_DEF_dot,w90_dot_add_peierls
 public :: w90_bare_coulomb_full_device, w90_inverse_bare_coulomb_full_device
+public :: w90_momentum_full_device
 
 CONTAINS
 
 SUBROUTINE w90_free_memory()
     deallocate(Hr)
+    if (allocated(rmn)) deallocate(rmn)
+    if (allocated(pmn)) deallocate(pmn)
     deallocate(wannier_center)
 END SUBROUTINE w90_free_memory
 
@@ -355,6 +360,7 @@ implicit none
 integer, intent(in) :: a1, a2
 real(8), dimension(NB,NB) :: bare_coulomb
 real(8), intent(in) :: eps
+real(8), parameter :: r0= 1.5d0 ! length [ang] to remove singularity of 1/r
 real(8), parameter :: pi=3.14159265359d0
 real(8), parameter :: e=1.6d-19            ! charge of an electron (C)
 real(8), parameter :: epsilon0=8.85e-12    ! Permittivity of free space (m^-3 kg^-1 s^4 A^2)
@@ -364,8 +370,8 @@ integer :: i,j
 do i=1,NB
     do j=1,NB
         r = dble(a1)*alpha + dble(a2)*beta + wannier_center(:,i) - wannier_center(:,j)
-        if (norm(r) .lt. 1.0d0) then
-            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*1.0d0*1.0d-10)
+        if (norm(r) .lt. r0) then
+            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
         else
             bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
         end if
@@ -699,6 +705,60 @@ else
     end do      
 end if
 END SUBROUTINE w90_ribbon_add_peierls
+
+
+SUBROUTINE w90_momentum_full_device()
+implicit none
+END SUBROUTINE w90_momentum_full_device
+
+
+SUBROUTINE calc_momentum_operator(method)
+implicit none
+character(len=*),intent(in)::method
+REAL(8), PARAMETER  :: m0=5.6856D-16 ! eV s2 / cm2
+REAL(8), PARAMETER  :: hbar=6.58211899D-16 ! eV s
+integer::io,jo,ix,iy,mx,my,mo
+if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV s / cm]
+select case (method)
+  case ('approx')
+  ! use wannier centers, point-like orbitals
+    pmn = 0.0d0
+    do io=1,NB
+      do jo=1,NB
+        do ix=1,nx
+          do iy=1,ny
+            pmn(:,io,jo,ix,iy)=Hr(io,jo,ix,iy)*( wannier_center(:,io) - wannier_center(:,jo) )
+          enddo
+        enddo
+      enddo
+    enddo
+    pmn=pmn*1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar
+  case ('exact')
+  ! use position operator 
+    pmn = 0.0d0
+    do io=1,NB
+      do jo=1,NB
+        do ix=xmin,xmax
+          do iy=ymin,ymax
+            do mo=1,NB
+              do mx=xmin,xmax
+                do my=ymin,ymax
+                  if (((ix-mx)>=xmin).and.((ix-mx)<=xmax).and.((iy-my)>=ymin).and.((iy-my)<=ymax)) then
+                  pmn(:,io,jo,ix,iy)=pmn(:,io,jo,ix,iy)+&
+                    &Hr(io,mo,ix-mx,iy-my)*rmn(:,mo,jo,mx,my)-rmn(:,io,mo,ix-mx,iy-my)*Hr(mo,jo,mx,my)
+                  endif
+                enddo
+              enddo
+            enddo
+          enddo
+        enddo
+      enddo
+    enddo
+    pmn=pmn*1.0d-8*dcmplx(0.0d0,1.0d0)*m0/hbar
+  case default
+end select
+END SUBROUTINE
+
 
 
 FUNCTION norm(vector)
