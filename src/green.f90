@@ -240,12 +240,22 @@ complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
 complex(8) :: dE
+real(8)::nelec(2),mu(2),pelec(2)
 allocate(siglead(NB*NS,NB*NS,nen,2))
 siglead=dcmplx(0.0d0,0.0d0)
 allocate(B(nm_dev,nm_dev))
+mu=(/ mus, mud /)
+print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 do iter=0,niter
   print *, 'calc G'
-  call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,(/ mus, mud /),(/temps,tempd/))
+  call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))
+  if (iter == 0) then 
+    call calc_n_electron(G_lesser,G_greater,nen,En,NS,NB,nm_dev,nelec,pelec)    
+  else
+    call calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,(/temps,tempd/),mu)    
+    mu=(/ mus, mud /) - 0.2*sum(mu-(/ mus, mud /))/2.0d0 ! move Fermi level because Sig_GW shifts slightly the energies
+    print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
+  end if  
   call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
   call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -375,7 +385,100 @@ do i=0,add-1
 enddo
 end subroutine expand_size_bycopy
 
+subroutine calc_n_electron(G_lesser,G_greater,nen,E,NS,NB,nm_dev,nelec,pelec)
+complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen)
+complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen)
+real(8), intent(in)    :: E(nen)
+integer, intent(in)    :: NS,NB,nm_dev,nen
+real(8), intent(out)   :: nelec(2),pelec(2)
+integer::i,j
+nelec=0.0d0
+pelec=0.0d0
+do i=1,nen
+  do j=1,NS*NB
+    nelec(1)=nelec(1)+aimag(G_lesser(j,j,i))*(E(2)-E(1))
+    pelec(1)=pelec(1)-aimag(G_greater(j,j,i))*(E(2)-E(1))
+  enddo
+enddo
+do i=1,nen
+  do j=nm_dev-NS*NB+1,nm_dev
+    nelec(2)=nelec(2)+aimag(G_lesser(j,j,i)*(E(2)-E(1)))
+    pelec(1)=pelec(1)-aimag(G_greater(j,j,i))*(E(2)-E(1))
+  enddo
+enddo
+end subroutine calc_n_electron
 
+subroutine calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,Temp,mu)
+real(8),intent(in)::Temp(2)
+real(8),intent(out)::mu(2)
+complex(8), intent(in) :: G_retarded(nm_dev,nm_dev,nen)
+real(8), intent(in)    :: En(nen)
+integer, intent(in)    :: NS,NB,nm_dev,nen
+real(8), intent(in)    :: nelec(2),pelec(2)
+real(8)::dE,n(nen),p(nen),fd,mun,mup
+real(8),allocatable::dos(:),K(:),Q(:),fermi_derivative(:,:)
+REAL(8), PARAMETER  :: BOLTZ=8.61734d-05 !eV K-1
+integer::nefermi,i,j,l
+allocate(dos(nen))
+allocate(K(nen))
+allocate(Q(nen))
+!nefermi=1+2*floor(10.0*boltz*maxval(temp)/(En(2)-En(1))) ! number of energy points for the fermi derivative function
+nefermi=nen
+dE=En(2)-En(1)
+do i=1,2
+  dos=0.0d0
+  K=0.0d0
+  Q=0.0d0
+  n=0.0d0
+  p=0.0d0
+  do j=1,nen
+    if (i==1) then
+      do l=1,NS*NB
+        dos(j) = dos(j)+aimag(G_retarded(l,l,j))
+      enddo
+    else
+      do l=nm_dev-NS*NB+1,nm_dev
+        dos(j) = dos(j)+aimag(G_retarded(l,l,j))
+      enddo
+    endif    
+    dos(j)=-2.0d0*dos(j)
+    if (j>1) K(j)=K(j-1)+dos(j)*dE    
+    if (j>1) Q(nen-j+1)=Q(nen-j+2)+dos(j)*dE    
+  enddo
+  ! search for the Fermi level
+!  if (dE<(BOLTZ*TEMP(i))) then
+!    allocate(fermi_derivative(nefermi,2))
+!    do j=1,nefermi
+!      fd=ferm(dble(dE)*dble(j-nefermi/2-1)/(BOLTZ*TEMP(i)))
+!      fermi_derivative(j,i) = -fd*(1.0d0-fd)/(BOLTZ*TEMP(i))    
+!    enddo
+!    do j=1,nen
+!      n(j)=-sum(K(max(j-nefermi/2+1,1):min(j+nefermi/2,nen))*fermi_derivative(max(nefermi/2-j,1):min(nen-j,nefermi),i))*dE
+!    enddo
+!    deallocate(fermi_derivative)
+!  else ! energy grid too coarse
+    ! approximate F-D to step-function
+    n = K
+    p = Q
+!  endif
+  n=n-nelec(i)  
+  p=p-pelec(i)
+  do j=2,nen
+    if ((n(j)>=0.0).and.(n(j-1)<=0.0)) then
+      mun=En(j)
+      exit
+    endif
+  enddo
+  do j=nen-1,1,-1
+    if ((p(j)>=0.0).and.(p(j+1)<=0.0)) then
+      mup=En(j)
+      exit
+    endif
+  enddo
+  mu(i)=(mun+mup)/2.0d0
+enddo
+deallocate(dos,K)
+end subroutine calc_fermi_level
 
 ! hw from 0 to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<_ij(hw) + G^<>_ij(E+hw) W^>_ji(hw)
 ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
