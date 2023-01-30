@@ -1,6 +1,6 @@
 PROGRAM main
 USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,w90_inverse_bare_coulomb_full_device
-use green, only : green_calc_g, green_calc_polarization, green_calc_w, green_calc_gw_selfenergy,green_subspace_invert,green_solve_gw_1D
+use green, only : green_calc_g, green_subspace_invert,green_solve_gw_1D
 use mod_string, only : string
 implicit none
 real(8), parameter :: pi=3.14159265359d0
