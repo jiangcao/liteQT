@@ -299,7 +299,7 @@ implicit none
 integer, intent(in) :: length
 integer, intent(in), optional :: NS
 real(8), intent(in) :: ky
-complex(8), intent(out), dimension(NB*length,NB*length) :: Ham
+complex(8), intent(inout), dimension(NB*length,NB*length) :: Ham
 integer :: i,j, k
 real(8), dimension(3) :: kv, r
 complex(8) :: phi
@@ -309,7 +309,7 @@ do i = 1, length
         do j = ymin,ymax
             kv = ky*yhat
             r =  dble(i-k)*alpha + dble(j)*beta                    
-            phi = -z1j* dot_product(r,kv)
+            phi = dcmplx( 0.0d0, - dot_product(r,kv) )
             if (present(NS)) then
                 if ((i-k <= min(NS,xmax) ) .and. (i-k >= max(-NS,xmin) )) then                
                     Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
