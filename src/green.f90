@@ -276,7 +276,7 @@ do iter=0,niter
       P_retarded(:,:,iop,iqz) = dcmplx(0.0d0,0.0d0)    
       do ie = max(nop+1,1),min(nen,nen+nop) 
         do ikz=1,nphiz
-          dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	          
+          dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )   
           do i = 1, nm_dev        
               l=max(i-ndiag,1)
               h=min(nm_dev,i+ndiag)
@@ -285,7 +285,8 @@ do iter=0,niter
               if (ikzd>nphiz) ikzd=ikzd-nphiz
               P_lesser(i,l:h,iop,iqz) = P_lesser(i,l:h,iop,iqz) + dE* G_lesser(i,l:h,ie,ikz) * G_greater(l:h,i,ie-nop,ikzd)
               P_greater(i,l:h,iop,iqz) = P_greater(i,l:h,iop,iqz) + dE* G_greater(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikzd)        
-              P_retarded(i,l:h,iop,iqz) = P_retarded(i,l:h,iop,iqz) + dE* (G_lesser(i,l:h,ie,ikz) * conjg(G_retarded(i,l:h,ie-nop,ikzd)) + G_retarded(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikz))        
+              P_retarded(i,l:h,iop,iqz) = P_retarded(i,l:h,iop,iqz) + &
+                  & dE* (G_lesser(i,l:h,ie,ikz) * conjg(G_retarded(i,l:h,ie-nop,ikzd)) + G_retarded(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikz))        
           enddo
         enddo
       enddo
@@ -615,7 +616,7 @@ do i=1,2
 !    enddo
 !    deallocate(fermi_derivative)
 !  else ! energy grid too coarse
-    ! approximate F-D to step-function
+!    ! approximate F-D to step-function
     n = K
     p = Q
 !  endif
@@ -786,6 +787,7 @@ do ie = 1,nen
             tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie,ikz)            
           enddo
         enddo
+        tr=tr/dble(nkz)
         write(11,'(4E18.4)') j*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     end do
     write(11,*)    

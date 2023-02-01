@@ -360,21 +360,23 @@ implicit none
 integer, intent(in) :: a1, a2
 real(8), dimension(NB,NB) :: bare_coulomb
 real(8), intent(in) :: eps
-real(8), parameter :: r0= 1.5d0 ! length [ang] to remove singularity of 1/r
+real(8), parameter :: r0= 0.5d0 ! length [ang] to remove singularity of 1/r
 real(8), parameter :: pi=3.14159265359d0
 real(8), parameter :: e=1.6d-19            ! charge of an electron (C)
 real(8), parameter :: epsilon0=8.85e-12    ! Permittivity of free space (m^-3 kg^-1 s^4 A^2)
-real(8) :: r(3)
+real(8) :: r(3),normr
 real(8) :: maxV
 integer :: i,j  
 do i=1,NB
     do j=1,NB
         r = dble(a1)*alpha + dble(a2)*beta + wannier_center(:,i) - wannier_center(:,j)
-        if (norm(r) .lt. r0) then
-            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
-        else
-            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
-        end if
+        normr = norm(r)
+        bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*normr*1.0d-10) * tanh(normr/r0)  ! in eV
+!        if (norm(r) .lt. r0) then
+!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
+!        else
+!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
+!        end if
     end do
 end do
  ! if  (abs(a1) .gt. 1) then
