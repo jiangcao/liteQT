@@ -374,7 +374,7 @@ do i=1,NB
         if (normr >0.0d0) then
           bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*normr*1.0d-10) * tanh(normr/r0)  ! in eV
         else
-          bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0)
+          bare_coulomb(i,j) = 0.0d0 !! (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction is set to zero
         endif
 !        if (norm(r) .lt. r0) then
 !            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
@@ -382,16 +382,7 @@ do i=1,NB
 !            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
 !        end if
     end do
-end do
- ! if  (abs(a1) .gt. 1) then
- !   bare_coulomb = 0.0d0
- ! else
- !   maxV=maxval(bare_coulomb)
- !   bare_coulomb=0.0d0
- !   do i=1,NB
- !       bare_coulomb(i,i)=maxV
- !   enddo
- ! endif
+end do 
 END FUNCTION bare_coulomb
 
 !!! construct the inverse of bare Coulomb Matrix for the device
