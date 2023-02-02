@@ -252,14 +252,15 @@ if (ltrans) then
       end do
       close(11)
       !
-      !open(unit=11,file='Ham.dat',status='unknown')
-      !do i=1, size(Ham,1)
-      !    do j=1, size(Ham,2)
-      !        write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j,1)), aimag(Ham(i,j,1))
-      !    end do
-      !    write(11,*)
-      !end do
-      !close(11)
+      open(unit=11,file='Ham.dat',status='unknown')
+      do i=1, size(Ham,1)
+          do j=1, size(Ham,2)
+              write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j,1)), aimag(Ham(i,j,1))
+          end do
+          write(11,*)
+      end do
+      close(11)
+      !
       ! add on potential    
       do j = 1,length
           do ib = 1,nb
