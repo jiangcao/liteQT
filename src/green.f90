@@ -7,7 +7,7 @@ implicit none
 
 private
 
-public :: green_calc_g, green_rgf_cms
+public :: green_calc_g
 public :: green_subspace_invert,green_solve_gw_1D,green_solve_gw_2D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
@@ -121,12 +121,12 @@ do iter=0,niter
   !
   ndiag=NB*NS*2
   nopmax=nen/2-10
-  Sig_greater = dcmplx(0.0d0,0.0d0)
-  Sig_lesser = dcmplx(0.0d0,0.0d0)
-  Sig_retarded = dcmplx(0.0d0,0.0d0)
+  Sig_greater_new = dcmplx(0.0d0,0.0d0)
+  Sig_lesser_new = dcmplx(0.0d0,0.0d0)
+  Sig_retarded_new = dcmplx(0.0d0,0.0d0)
   dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)    
   ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
-  !$omp parallel default(none) private(ndiag,l,h,nop,ie,i,j,iop,ikz,ikzd,iqz) shared(nopmax,Sig_lesser,Sig_greater,Sig_retarded,W_lesser,W_greater,W_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded,dE,nphiz)
+  !$omp parallel default(none) private(ndiag,l,h,nop,ie,i,j,iop,ikz,ikzd,iqz) shared(nopmax,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded,dE,nphiz)
   !$omp do
   do ie=1,nen
     do ikz=1,nphiz
@@ -140,11 +140,11 @@ do iter=0,niter
             do i = 1,nm_dev   
               l=max(i-ndiag,1)
               h=min(nm_dev,i+ndiag)       
-              Sig_lesser(i,l:h,ie,ikz)=Sig_lesser(i,l:h,ie,ikz)+dE*G_lesser(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz)
-              Sig_greater(i,l:h,ie,ikz)=Sig_greater(i,l:h,ie,ikz)+dE*G_greater(i,l:h,ie-nop,ikzd)*W_greater(i,l:h,iop,iqz)
-              Sig_retarded(i,l:h,ie,ikz)=Sig_retarded(i,l:h,ie,ikz)+dE*G_lesser(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz) 
-              Sig_retarded(i,l:h,ie,ikz)=Sig_retarded(i,l:h,ie,ikz)+dE*G_retarded(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz) 
-              Sig_retarded(i,l:h,ie,ikz)=Sig_retarded(i,l:h,ie,ikz)+dE*G_retarded(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz)          
+              Sig_lesser_new(i,l:h,ie,ikz)=Sig_lesser_new(i,l:h,ie,ikz)+G_lesser(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz)
+              Sig_greater_new(i,l:h,ie,ikz)=Sig_greater_new(i,l:h,ie,ikz)+G_greater(i,l:h,ie-nop,ikzd)*W_greater(i,l:h,iop,iqz)
+              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_lesser(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz) 
+              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_retarded(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz) 
+              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_retarded(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz)          
             enddo      
           enddo
         endif
@@ -153,7 +153,10 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
-  Sig_retarded(:,:,:,:) = dcmplx( dble(Sig_retarded(:,:,:,:)), aimag(Sig_greater(:,:,:,:)-Sig_lesser(:,:,:,:))/2.0d0 )
+  Sig_lesser_new = Sig_lesser_new  * dE
+  Sig_greater_new= Sig_greater_new * dE
+  Sig_retarded_new=Sig_retarded_new* dE
+  Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
   ! mixing with previous ones
   Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
   Sig_lesser = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
@@ -277,12 +280,12 @@ do iter=0,niter
   print *, 'calc SigGW'
   ndiag=NB*NS*2
   nopmax=nen/2-10
-  Sig_greater = dcmplx(0.0d0,0.0d0)
-  Sig_lesser = dcmplx(0.0d0,0.0d0)
-  Sig_retarded = dcmplx(0.0d0,0.0d0)
+  Sig_greater_new = dcmplx(0.0d0,0.0d0)
+  Sig_lesser_new = dcmplx(0.0d0,0.0d0)
+  Sig_retarded_new = dcmplx(0.0d0,0.0d0)
   dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)    
   ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
-  !$omp parallel default(none) private(ndiag,l,h,nop,ie,i,j,iop) shared(nopmax,Sig_lesser,Sig_greater,Sig_retarded,W_lesser,W_greater,W_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded,dE)
+  !$omp parallel default(none) private(ndiag,l,h,nop,ie,i,j,iop) shared(nopmax,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded,dE)
   !$omp do
   do ie=1,nen
     do nop= -nopmax,nopmax    
@@ -291,21 +294,24 @@ do iter=0,niter
         do i = 1,nm_dev   
           l=max(i-ndiag,1)
           h=min(nm_dev,i+ndiag)       
-          Sig_lesser(i,l:h,ie)=Sig_lesser(i,l:h,ie)+dE*G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h,iop)
-          Sig_greater(i,l:h,ie)=Sig_greater(i,l:h,ie)+dE*G_greater(i,l:h,ie-nop)*W_greater(i,l:h,iop)
-          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h,iop) 
-          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h,iop) 
-          Sig_retarded(i,l:h,ie)=Sig_retarded(i,l:h,ie)+dE*G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h,iop)          
+          Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h,iop)
+          Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie)+G_greater(i,l:h,ie-nop)*W_greater(i,l:h,iop)
+          Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h,iop) &
+                                                            &  +G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h,iop) &
+                                                            &  +G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h,iop)          
         enddo      
       endif
     enddo
   enddo
   !$omp end do
   !$omp end parallel
-  Sig_retarded(:,:,:) = dcmplx( dble(Sig_retarded(:,:,:)), aimag(Sig_greater(:,:,:)-Sig_lesser(:,:,:))/2.0d0 )
+  Sig_lesser_new = Sig_lesser_new  * dE
+  Sig_greater_new= Sig_greater_new * dE
+  Sig_retarded_new=Sig_retarded_new* dE
+  Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
   ! mixing with the previous one
   Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
-  Sig_lesser = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
+  Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
   Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)  
   ! get leads sigma
   siglead(:,:,:,1) = Sig_retarded(2*NB*NS+1:3*NB*NS,2*NB*NS+1:3*NB*NS,:)
