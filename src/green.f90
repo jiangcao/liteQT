@@ -637,7 +637,7 @@ implicit none
   integer i,j,k,nm,nmax
   COMPLEX(8) :: z
   real(8) :: E,error
-  REAL(8) :: TOL=1.0D-10  ! [eV]
+  REAL(8) :: TOL=1.0D-100  ! [eV]
   COMPLEX(8), INTENT(IN) ::  S00(nm,nm), H00(nm,nm), H10(nm,nm)
   COMPLEX(8), INTENT(OUT) :: G00(nm,nm), GBB(nm,nm)
   COMPLEX(8), ALLOCATABLE :: A(:,:), B(:,:), C(:,:), tmp(:,:)

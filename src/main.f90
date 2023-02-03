@@ -1,6 +1,6 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,w90_inverse_bare_coulomb_full_device
-use green, only : green_calc_g, green_subspace_invert,green_solve_gw_1D,green_solve_gw_2D
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM
+use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D
 use mod_string, only : string
 implicit none
 real(8), parameter :: pi=3.14159265359d0
@@ -22,7 +22,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
-real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz
+real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0
 
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -45,6 +45,7 @@ if (ltrans) then
     read(10,*) lreadpot
     read(10,*) niter
     read(10,*) eps_screen
+    read(10,*) r0
     read(10,*) mus,mud
     read(10,*) temps, tempd
     read(10,*) alpha_mix
@@ -149,7 +150,7 @@ if (ltrans) then
         ! device Ham matrix
         call w90_MAT_DEF_full_device(Ham(:,:,ikz),kz,length)      
         ! Coulomb operator
-        call w90_bare_coulomb_full_device(V(:,:,ikz),kz,length,eps_screen)      
+        call w90_bare_coulomb_full_device(V(:,:,ikz),kz,length,eps_screen,r0)      
       enddo
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
@@ -242,7 +243,7 @@ if (ltrans) then
       ! device Ham matrix
       call w90_MAT_DEF_full_device(Ham(:,:,1),kt_CBM,length,NS)      
       ! Coulomb operator
-      call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen)      
+      call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0)      
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
           do j=1, size(V,2)
