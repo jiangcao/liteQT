@@ -25,7 +25,7 @@ public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_M
 public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_ribbon_add_peierls, w90_MAT_DEF_full_device, w90_MAT_DEF_dot,w90_dot_add_peierls
-public :: w90_bare_coulomb_full_device, w90_inverse_bare_coulomb_full_device
+public :: w90_bare_coulomb_full_device
 public :: w90_momentum_full_device
 
 CONTAINS
@@ -327,11 +327,12 @@ end do
 END SUBROUTINE w90_MAT_DEF_full_device
 
 !!! construct the bare Coulomb Matrix for the full-device
-SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,NS)
+SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,r0,NS)
 implicit none
 integer, intent(in) :: length
 integer, intent(in), optional :: NS
 real(8), intent(in) :: ky, eps ! dielectric constant
+real(8), intent(in) :: r0 ! length [ang] to remove singularity of 1/r
 complex(8), intent(out), dimension(NB*length,NB*length) :: V
 integer :: i,j, k
 real(8), dimension(3) :: kv, r
@@ -344,23 +345,23 @@ do i = 1, length
             if (present(NS)) then
                 if ((i-k <= NS ) .and. (i-k >= -NS )) then                
                     V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                    & bare_coulomb(i-k,j,eps) * exp(-z1j* dot_product(r,kv) )           
+                    & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )           
                 end if                 
             else
                 V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                & bare_coulomb(i-k,j,eps) * exp(-z1j* dot_product(r,kv) )                           
+                & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )                           
             end if
         end do
     end do
 end do
 END SUBROUTINE w90_bare_coulomb_full_device
 ! function to calculate the bare coulomb potential for wannier orbitals between the (0,0) and (a1,a2) cells
-FUNCTION bare_coulomb(a1,a2,eps)
+FUNCTION bare_coulomb(a1,a2,eps,r0)
 implicit none
 integer, intent(in) :: a1, a2
 real(8), dimension(NB,NB) :: bare_coulomb
-real(8), intent(in) :: eps
-real(8), parameter :: r0= 1.0d0 ! length [ang] to remove singularity of 1/r
+real(8), intent(in) :: eps ! dielectric constant
+real(8), intent(in) :: r0 ! length [ang] to remove singularity of 1/r
 real(8), parameter :: pi=3.14159265359d0
 real(8), parameter :: e=1.6d-19            ! charge of an electron (C)
 real(8), parameter :: epsilon0=8.85e-12    ! Permittivity of free space (m^-3 kg^-1 s^4 A^2)
@@ -374,126 +375,17 @@ do i=1,NB
         if (normr >0.0d0) then
           bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*normr*1.0d-10) * tanh(normr/r0)  ! in eV
         else
-          bare_coulomb(i,j) = 0.0d0 !! (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction is set to zero
+          bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction 
         endif
-!        if (norm(r) .lt. r0) then
-!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
-!        else
-!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
-!        end if
+!!        if (norm(r) .lt. r0) then
+!!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
+!!        else
+!!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
+!!        end if
     end do
 end do 
 END FUNCTION bare_coulomb
 
-!!! construct the inverse of bare Coulomb Matrix for the device
-SUBROUTINE w90_inverse_bare_coulomb_full_device(invV,ky,length,eps,nkx,nky,NS)
-implicit none
-integer, intent(in) :: length
-integer, intent(in) :: nkx,nky
-integer, intent(in), optional :: NS
-real(8), intent(in) :: ky, eps ! transverse k , dielectric constant
-complex(8), intent(out), dimension(NB*length,NB*length) :: invV
-complex(8), dimension(:,:,:,:),allocatable::invVij
-integer :: i,j,k
-real(8), dimension(3) :: kv,r
-allocate(invVij(NB,NB,nkx,nky))
-call inverse_bare_coulomb(invVij,eps,nkx,nky)
-invV = dcmplx(0.0d0,0.0d0)
-do i = 1, length
-  do k = 1, length
-    do j = ymin,ymax
-      kv = ky*yhat    
-      r =  dble(i-k)*alpha + dble(j)*beta                
-      if (present(NS)) then
-        if ((i-k <= NS ) .and. (i-k >= -NS )) then                
-          invV(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = invV(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                & invVij(:,:,i-k+nkx/2,j-ymin+1) * exp(-z1j* dot_product(r,kv) )           
-        endif                 
-      else
-        if ((i-k <= nkx/2 ) .and. (i-k >= -nkx/2+1 )) then                
-          invV(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = invV(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                & invVij(:,:,i-k+nkx/2,j-ymin+1) * exp(-z1j* dot_product(r,kv) )                           
-        endif
-      endif
-    enddo
-  enddo
-enddo
-deallocate(invVij)
-END SUBROUTINE w90_inverse_bare_coulomb_full_device
-
-!!! calculate the inverse operator/matrix for wannier orbitals 
-! it first transforms the matrix into k space, then it invert the matrix for
-! each k, finally it transforms it back to real space
-SUBROUTINE inverse_bare_coulomb(invV,eps,nkx,nky)
-complex(8),intent(inout),dimension(nb,nb,nkx,nky)::invV
-integer,intent(in)::nkx, nky
-real(8), intent(in) :: eps
-integer::ikx,iky,i,j
-complex(8)::phi
-complex(8),allocatable::invVk(:,:,:,:)
-real(8)::dkx, dky, kx, ky,r(3),kv(3)
-allocate(invVk(NB,NB,nkx,nky))
-dkx = 1.0d0 / dble(nkx-1) * 2 * pi / Lx
-if (nky == 1) then
-  dky = 2*pi / Ly
-else    
-  dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
-endif
-! invert coulomb in k space
-!$omp parallel default(none) private(ikx,iky,kx,ky,i,j,r,phi,kv) shared(nkx,nky,dkx,dky,alpha,beta,invVk,eps,NB,Lx,Ly,xhat,yhat)
-!$omp do
-do ikx=1,nkx
-  do iky=1,nky
-    kx = dble(ikx)*dkx - pi / Lx
-    ky = dble(iky)*dky - pi / Ly
-    if (nky == 1) then
-      ky = 0.0d0
-    endif
-    kv = kx*xhat + ky*yhat
-    invVk(:,:,ikx,iky) = dcmplx(0.0d0,0.0d0)
-    do i = 1,nkx           
-        do j = 1,nky
-            r = dble(i-nkx/2)*alpha + dble(j-nky/2)*beta   
-            if (nky == 1) then
-              r = dble(i-nkx/2)*alpha
-            endif
-            phi = exp( dcmplx( 0.0d0, - dot_product(r,kv) ) )                    
-            invVk(:,:,ikx,iky) = invVk(:,:,ikx,iky) + bare_coulomb(i,j,eps) * phi / dble(nkx*nky)                                  
-        end do        
-    end do   
-    call invert(invVk(:,:,ikx,iky),NB)
-  enddo
-enddo
-!$omp end do
-!$omp end parallel
-! invert coulomb in real space
-!$omp parallel default(none) private(i,j,r,ikx,iky,kx,ky,phi,kv) shared(nkx,nky,alpha,beta,dkx,dky,invV,invVk,Lx,Ly,xhat,yhat)
-!$omp do
-do i = 1,nkx           
-  do j = 1,nky
-    r = dble(i-nkx/2)*alpha + dble(j-nky/2)*beta   
-    if (nky == 1) then
-      r = dble(i-nkx/2)*alpha
-    endif
-    invV(:,:,i,j) = dcmplx(0.0d0,0.0d0)
-    do ikx=1,nkx
-      do iky=1,nky
-        kx = dble(ikx)*dkx - pi / Lx
-        ky = dble(iky)*dky - pi / Ly    
-        if (nky == 1) then
-          ky = 0.0d0
-        endif
-        kv = kx*xhat + ky*yhat
-        phi = exp( dcmplx( 0.0d0, dot_product(r,kv) ) )                   
-        invV(:,:,i,j) = invV(:,:,i,j) + invVk(:,:,ikx,iky) * phi / dble(nkx*nky)
-      end do        
-    end do       
-  enddo
-enddo
-!$omp end do
-!$omp end parallel
-deallocate(invVk)      
-end subroutine inverse_bare_coulomb
 
 !!! construct the Ribbon structure Hamiltonian's diagonal and off-diagonal blocks
 SUBROUTINE w90_MAT_DEF_ribbon_simple(Hii,H1i,nn,width,axis)
@@ -704,8 +596,38 @@ end if
 END SUBROUTINE w90_ribbon_add_peierls
 
 
-SUBROUTINE w90_momentum_full_device()
+SUBROUTINE w90_momentum_full_device(Ham,ky,length,NS)
 implicit none
+integer, intent(in) :: length
+integer, intent(in), optional :: NS
+real(8), intent(in) :: ky
+complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham
+integer :: i,j, k,v
+real(8), dimension(3) :: kv, r
+complex(8) :: phi
+Ham = dcmplx(0.0d0,0.0d0)
+do v=1,3
+  do i = 1, length
+    do k = 1, length
+      do j = ymin,ymax
+        kv = ky*yhat
+        r =  dble(i-k)*alpha + dble(j)*beta                    
+        phi = dcmplx( 0.0d0, - dot_product(r,kv) )
+        if (present(NS)) then
+            if ((i-k <= min(NS,xmax) ) .and. (i-k >= max(-NS,xmin) )) then                
+                Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + &
+                & pmn(v,:,:,i-k-xmin+1,j-ymin+1) * exp( phi )           
+            end if                 
+        else
+            if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
+                Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + &
+                & pmn(v,:,:,i-k-xmin+1,j-ymin+1) * exp( phi )           
+            end if                 
+        end if
+      end do
+    end do
+  end do
+enddo
 END SUBROUTINE w90_momentum_full_device
 
 
@@ -731,7 +653,7 @@ select case (method)
     enddo
     pmn=pmn*1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar
   case ('exact')
-  ! use position operator 
+  ! use position operator : im_0/hbar sum_{R'l} H_{nl}(R-R') r_{lm}(R') - r_{nl}(R-R') H_{lm}(R')
     pmn = 0.0d0
     do io=1,NB
       do jo=1,NB

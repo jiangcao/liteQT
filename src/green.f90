@@ -8,7 +8,7 @@ implicit none
 private
 
 public :: green_calc_g
-public :: green_subspace_invert,green_solve_gw_1D,green_solve_gw_2D
+public :: green_solve_gw_1D,green_solve_gw_2D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -718,7 +718,7 @@ implicit none
 end subroutine sancho
 
 
-subroutine green_subspace_invert(nm,A,add_nm,in_method)
+subroutine subspace_invert(nm,A,add_nm,in_method)
 integer, intent(in) :: nm ! dimension of subspace 
 integer, intent(in) :: add_nm ! additional dimension 
 complex(8), intent(inout) :: A(nm,nm)
@@ -775,7 +775,7 @@ select case (trim(method))
   
 end select  
 
-end subroutine green_subspace_invert
+end subroutine subspace_invert
 
 
 subroutine identity(A,n)
