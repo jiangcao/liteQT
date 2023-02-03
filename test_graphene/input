@@ -1,4 +1,4 @@
-10         !ns
+4         !ns
 10         !width
 200        !nkx
 1         ! num B 
@@ -8,11 +8,14 @@
 F   ! reorder axis
 F   ! quantum dot
 T   ! transport
-30         !length
--12.0  4.0   1000    ! emin emax num_en
+15         !length
+-12.0  4.0   2000    ! emin emax num_en
 F   ! read potential from pot_dat
 10   ! num iter
 1.0   ! epsilon screening
--4.0 -4.0  ! mu_s mu_d 
+1.5   ! r0
+-2.79 -2.79  ! mu_s mu_d 
 300.0   300.0  ! temperature 
 0.5   ! alpha mix
+T    ! 2D with kz
+11   ! num kz
