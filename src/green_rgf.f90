@@ -216,4 +216,4 @@ subroutine green_RGF_CMS(TEMP,nm,nx,ny,EKZ,E,mul,mur,Sii,Hii,H1i,sigma_lesser_ph
   deallocate(Gln)
 end subroutine green_RGF_CMS
 
-end module green_
+end module green_rgf

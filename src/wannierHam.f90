@@ -375,7 +375,7 @@ do i=1,NB
         if (normr >0.0d0) then
           bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*normr*1.0d-10) * tanh(normr/r0)  ! in eV
         else
-          bare_coulomb(i,j) = 0.0d0 !! (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction 
+          bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction 
         endif
 !!        if (norm(r) .lt. r0) then
 !!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
@@ -596,17 +596,19 @@ end if
 END SUBROUTINE w90_ribbon_add_peierls
 
 
-SUBROUTINE w90_momentum_full_device(Ham,ky,length,NS)
+SUBROUTINE w90_momentum_full_device(Ham,ky,length,NS,method)
 implicit none
 integer, intent(in) :: length
 integer, intent(in), optional :: NS
 real(8), intent(in) :: ky
-complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham
+complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham ! momentum matrix [eV s / m]
+character(len=*),intent(in)::method
 integer :: i,j, k,v
 real(8), dimension(3) :: kv, r
 complex(8) :: phi
 Ham = dcmplx(0.0d0,0.0d0)
-do v=1,3
+call calc_momentum_operator(method)
+do v=1,3 ! cart direction
   do i = 1, length
     do k = 1, length
       do j = ymin,ymax
@@ -629,15 +631,14 @@ do v=1,3
   end do
 enddo
 END SUBROUTINE w90_momentum_full_device
-
-
+!
 SUBROUTINE calc_momentum_operator(method)
 implicit none
 character(len=*),intent(in)::method
 REAL(8), PARAMETER  :: m0=5.6856D-16 ! eV s2 / cm2
 REAL(8), PARAMETER  :: hbar=6.58211899D-16 ! eV s
 integer::io,jo,ix,iy,mx,my,mo
-if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV s / cm]
+if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV s / m]
 select case (method)
   case ('approx')
   ! use wannier centers, point-like orbitals
@@ -651,7 +652,7 @@ select case (method)
         enddo
       enddo
     enddo
-    pmn=pmn*1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar
+    pmn=pmn*1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar*1.0d2
   case ('exact')
   ! use position operator : im_0/hbar sum_{R'l} H_{nl}(R-R') r_{lm}(R') - r_{nl}(R-R') H_{lm}(R')
     pmn = 0.0d0
@@ -673,7 +674,7 @@ select case (method)
         enddo
       enddo
     enddo
-    pmn=pmn*1.0d-8*dcmplx(0.0d0,1.0d0)*m0/hbar
+    pmn=pmn*1.0d-8*dcmplx(0.0d0,1.0d0)*m0/hbar*1.0d2
   case default
 end select
 END SUBROUTINE
