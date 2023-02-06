@@ -13,6 +13,11 @@ public :: green_solve_ephoton_freespace_1D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+real(8), parameter :: hbar=1.0546e-34 ! m^2 kg / s
+real(8), parameter :: m0=9.109e-31 ! kg
+real(8), parameter :: eps0=8.854e-12 ! C/V/m 
+real(8), parameter :: c0=2.998e8 ! m/s
+real(8), parameter :: e0=1.6022e-19 ! C
 
 CONTAINS
 
@@ -29,28 +34,24 @@ complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV s / m]
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 real(8), intent(in) :: polarization(3) ! light polarization vector 
 real(8), intent(in) :: intensity ! [W/m^2]
-real(8), parameter :: hbar=1.0546e-34 ! m^2 kg / s
-real(8), parameter ::  m0=9.109e-31 ! kg
-real(8), parameter :: eps0=8.854e-12 ! C/V/m 
-real(8), parameter :: c0=2.998e8 ! m/s
-real(8), parameter :: e0=1.6022e-19 ! C
 real(8), parameter :: pre_fact=(hbar/m0)**2/(2.0d0*eps0*c0**3) 
 !---------
 integer::ie,nop,i,iter
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
-complex(8),allocatable::M(:,:)
+complex(8),allocatable::M(:,:) ! e-photon coupling matrix
 real(8)::Nphot,mu(2)
   mu=(/ mus, mud /)
   allocate(siglead(NB*NS,NB*NS,nen,2))
   siglead=dcmplx(0.0d0,0.0d0)  
   allocate(M(nm_dev,nm_dev))
-  M=0.0d0
+  M=dcmplx(0.0d0,0.0d0)
   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
   do i=1,3
     M=M+ polarization(i) * Pmn(:,:,i)
   enddo
   M=M* pre_fact/ hw
   Nphot=intensity / (hw * e0)
+  nop=floor(hw / (En(2)-En(1)))
   do iter=0,niter
     ! empty files for sancho 
     open(unit=101,file='sancho_gbb.dat',status='unknown')
@@ -70,8 +71,11 @@ real(8)::Nphot,mu(2)
     ! get leads sigma
     siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
     siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
+    call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
   enddo
-  deallocate(M)
+  deallocate(M,siglead)
 end subroutine green_solve_ephoton_freespace_1D
 ! calculate e-photon self-energies in the monochromatic assumption
 subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,Nphot,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
@@ -283,19 +287,20 @@ end subroutine green_solve_gw_2D
 
 
 ! driver for iterating G -> P -> W -> Sig 
-subroutine green_solve_gw_1D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
+subroutine green_solve_gw_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
 implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
-real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
 complex(8), intent(in):: V(nm_dev,nm_dev)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
 complex(8),allocatable,dimension(:,:):: B ! tmp matrix
+real(8),allocatable::cur(:,:,:),tot_cur(:,:)
 integer :: iter,ie,nopmax
 integer :: i,j,nm,nop,l,h,iop,ndiag
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
@@ -306,6 +311,8 @@ real(8)::nelec(2),mu(2),pelec(2)
 allocate(siglead(NB*NS,NB*NS,nen,2))
 siglead=dcmplx(0.0d0,0.0d0)
 allocate(B(nm_dev,nm_dev))
+allocate(tot_cur(nm_dev,nm_dev))
+allocate(cur(nm_dev,nm_dev,nen))
 mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 do iter=0,niter
@@ -325,6 +332,8 @@ do iter=0,niter
  !   mu=(/ mus, mud /) - 0.2*sum(mu-(/ mus, mud /))/2.0d0 ! move Fermi level because Sig_GW shifts slightly the energies
  !   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
  ! end if  
+  call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,cur,tot_cur)
+  call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
   call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
   call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -437,7 +446,7 @@ do iter=0,niter
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
 enddo                
 deallocate(siglead)
-deallocate(B)
+deallocate(B,cur,tot_cur)
 end subroutine green_solve_gw_1D
 
 
@@ -661,6 +670,52 @@ if ((present(G_lesser)).or.(present(G_greater))) then
 end if
 if (solve_Gr) G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
 end subroutine green_calc_g
+
+subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,cur,tot_cur)
+implicit none
+complex(8),intent(in)::H(nm_dev,nm_dev),G_lesser(nm_dev,nm_dev,nen)
+real(8),intent(in)::en(nen),spindeg
+integer,intent(in)::nen,nm_dev
+real(8),intent(out)::tot_cur(nm_dev,nm_dev)
+real(8),intent(out),optional::cur(nm_dev,nm_dev,nen)
+!----
+complex(8),allocatable::B(:,:)
+integer::i,j,ie,io,jo
+real(8),parameter::tpi=6.28318530718  
+  allocate(B(nm_dev,nm_dev))
+  tot_cur=dcmplx(0.0d0,0.0d0)  
+  do ie=1,nen
+    call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,H,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)       
+    B=B*2.0d0*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+    if (present(cur)) cur(:,:,ie) = dble(B)
+    tot_cur=tot_cur+ dble(B)          
+  enddo
+  deallocate(B)
+end subroutine calc_bond_current
+
+! write current spectrum into file (pm3d map)
+subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
+character(len=*), intent(in) :: dataset
+real(8), intent(in) :: cur(:,:,:)
+integer, intent(in)::i,nen,length,NB
+real(8), intent(in)::Lx,en(nen)
+integer:: ie,j,ib,jb
+real(8)::tr
+open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+do ie = 1,nen
+    do j = 1,length-1
+        tr=0.0d0          
+        do ib=1,nb
+          do jb=1,nb
+            tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)            
+          enddo
+        end do
+        write(11,'(4E18.4)') dble(j)*Lx, en(ie), tr
+    end do
+    write(11,*)    
+end do
+close(11)
+end subroutine write_current_spectrum
 
 ! write spectrum into file (pm3d map)
 subroutine write_spectrum(dataset,i,G,nen,en,length,NB,Lx,coeff)

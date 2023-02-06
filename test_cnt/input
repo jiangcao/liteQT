@@ -9,11 +9,13 @@ T   ! reorder axis
 3 2 1
 F   ! quantum dot
 T   ! transport 
-30         !length
--8.0  -1.0   1000    ! emin emax num_en
+15         !length
+-22.0  8.0   5000    ! emin emax num_en
 F   ! read potential from pot_dat
-10  ! num iter
-1.0  ! epsilon screening
--5.0  -5.0  ! mu_s mu_d 
+30  ! num iter
+1.0  ! epsilon 
+1.5  ! r0 [ang]
+-3.7  -3.7  ! mu_s mu_d 
 300.0   300.0  ! temperature 
 0.5   ! alpha mix
+F
