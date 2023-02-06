@@ -685,7 +685,12 @@ real(8),parameter::tpi=6.28318530718
   allocate(B(nm_dev,nm_dev))
   tot_cur=dcmplx(0.0d0,0.0d0)  
   do ie=1,nen
-    call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,H,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)       
+    do io=1,nm_dev
+      do jo=1,nm_dev
+        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie)
+      enddo
+    enddo
+    !call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,H,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)       
     B=B*2.0d0*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
     if (present(cur)) cur(:,:,ie) = dble(B)
     tot_cur=tot_cur+ dble(B)          
@@ -705,10 +710,10 @@ open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
 do ie = 1,nen
     do j = 1,length-1
         tr=0.0d0          
-        do ib=1,nb
-          do jb=1,nb
-            tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)            
-          enddo
+        do ib=1,nb  
+          do jb=1,nb        
+            tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)
+          enddo                        
         end do
         write(11,'(4E18.4)') dble(j)*Lx, en(ie), tr
     end do
