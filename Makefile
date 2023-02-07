@@ -3,7 +3,7 @@ MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.11
 FC90 = /usr/sepp/bin/ifort-2020-af
 #F90_FLAGS =  -r8 -check bounds -traceback -fpp 
 MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
-F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback   -qopenmp  -check bounds
+F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback -qopenmp # -check bounds 
 LIBS = -I$(MKLROOT)/include
 
 
@@ -19,9 +19,9 @@ vpath %.o $(MODDIR)
 
 # Targets.
 
-all: w90.x 
+all: liteQT.x 
 
-w90.x : main.f90  wannierHam.o green.o
+liteQT.x : main.f90 mod_string.o wannierHam.o green.o bse_mod.o phononDyn.o
 
 	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) $(LIBARPACK) -module $(MODDIR)
 

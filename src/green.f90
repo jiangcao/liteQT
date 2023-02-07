@@ -193,21 +193,21 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
-  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
   print *, 'calc W'
   !
   do nop=-nopmax+nen/2,nopmax+nen/2   
     do iqz=1,nphiz
-      call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:,nop,iqz),nm_dev,czero,B,nm_dev)   
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V(:,:,iqz),nm_dev,P_retarded(:,:,nop,iqz),nm_dev,czero,B,nm_dev)   
       do i=1,nm_dev
         B(i,i) = 1.0d0 + B(i,i)
       enddo  
       ! calculate W^r = (I - V P^r)^-1 V
       call invert(B,nm_dev)
-      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,W_retarded(:,:,nop,iqz),nm_dev)     
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V(:,:,iqz),nm_dev,czero,W_retarded(:,:,nop,iqz),nm_dev)     
       ! calculate W^< and W^> = W^r P^<> W^r dagger
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop,iqz),nm_dev,P_lesser(:,:,nop,iqz),nm_dev,czero,B,nm_dev) 
       call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop,iqz),nm_dev,czero,W_lesser(:,:,nop,iqz),nm_dev) 
@@ -215,9 +215,9 @@ do iter=0,niter
       call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop,iqz),nm_dev,czero,W_greater(:,:,nop,iqz),nm_dev)   
     enddo
   enddo
-  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
   print *, 'calc SigGW'
   !
@@ -300,7 +300,7 @@ complex(8), intent(in):: V(nm_dev,nm_dev)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
 complex(8),allocatable,dimension(:,:):: B ! tmp matrix
-real(8),allocatable::cur(:,:,:),tot_cur(:,:)
+real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 integer :: iter,ie,nopmax
 integer :: i,j,nm,nop,l,h,iop,ndiag
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
@@ -312,6 +312,7 @@ allocate(siglead(NB*NS,NB*NS,nen,2))
 siglead=dcmplx(0.0d0,0.0d0)
 allocate(B(nm_dev,nm_dev))
 allocate(tot_cur(nm_dev,nm_dev))
+allocate(tot_ecur(nm_dev,nm_dev))
 allocate(cur(nm_dev,nm_dev,nen))
 mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
@@ -332,8 +333,10 @@ do iter=0,niter
  !   mu=(/ mus, mud /) - 0.2*sum(mu-(/ mus, mud /))/2.0d0 ! move Fermi level because Sig_GW shifts slightly the energies
  !   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
  ! end if  
-  call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,cur,tot_cur)
+  call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
   call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
+  call write_current('I',iter,tot_cur,length,NB,Lx)
+  call write_current('EI',iter,tot_ecur,length,NB,Lx)
   call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
   call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -446,7 +449,7 @@ do iter=0,niter
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
 enddo                
 deallocate(siglead)
-deallocate(B,cur,tot_cur)
+deallocate(B,cur,tot_cur,tot_ecur)
 end subroutine green_solve_gw_1D
 
 
@@ -671,19 +674,21 @@ end if
 if (solve_Gr) G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
 end subroutine green_calc_g
 
-subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,cur,tot_cur)
+subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
 implicit none
 complex(8),intent(in)::H(nm_dev,nm_dev),G_lesser(nm_dev,nm_dev,nen)
 real(8),intent(in)::en(nen),spindeg
 integer,intent(in)::nen,nm_dev
-real(8),intent(out)::tot_cur(nm_dev,nm_dev)
-real(8),intent(out),optional::cur(nm_dev,nm_dev,nen)
+real(8),intent(out)::tot_cur(nm_dev,nm_dev) ! total bond current density
+real(8),intent(out),optional::tot_ecur(nm_dev,nm_dev) ! total bond energy current density
+real(8),intent(out),optional::cur(nm_dev,nm_dev,nen) ! energy resolved bond current density
 !----
 complex(8),allocatable::B(:,:)
 integer::i,j,ie,io,jo
 real(8),parameter::tpi=6.28318530718  
   allocate(B(nm_dev,nm_dev))
-  tot_cur=dcmplx(0.0d0,0.0d0)  
+  tot_cur=0.0d0  
+  tot_ecur=0.0d0
   do ie=1,nen
     do io=1,nm_dev
       do jo=1,nm_dev
@@ -693,10 +698,31 @@ real(8),parameter::tpi=6.28318530718
     !call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,H,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)       
     B=B*2.0d0*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
     if (present(cur)) cur(:,:,ie) = dble(B)
+    if (present(tot_ecur)) tot_ecur=tot_ecur+ en(ie)*dble(B)
     tot_cur=tot_cur+ dble(B)          
   enddo
   deallocate(B)
 end subroutine calc_bond_current
+
+! write current into file 
+subroutine write_current(dataset,i,cur,length,NB,Lx)
+character(len=*), intent(in) :: dataset
+real(8), intent(in) :: cur(:,:)
+integer, intent(in)::i,length,NB
+real(8), intent(in)::Lx
+integer:: j,ib,jb
+real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do j = 1,length-1
+    tr=0.0d0          
+    do ib=1,nb  
+      do jb=1,nb        
+        tr = tr+ cur((j-1)*nb+ib,j*nb+jb)
+      enddo                        
+    end do
+    write(11,'(2E18.4)') dble(j)*Lx, tr
+  end do
+end subroutine write_current
 
 ! write current spectrum into file (pm3d map)
 subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
@@ -715,7 +741,7 @@ do ie = 1,nen
             tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)
           enddo                        
         end do
-        write(11,'(4E18.4)') dble(j)*Lx, en(ie), tr
+        write(11,'(3E18.4)') dble(j)*Lx, en(ie), tr
     end do
     write(11,*)    
 end do
