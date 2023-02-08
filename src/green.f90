@@ -112,30 +112,36 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   Sig_lesser=0.0d0
   Sig_greater=0.0d0
   Sig_retarded=0.0d0
-  allocate(B(nm_dev,nm_dev))
-  allocate(A(nm_dev,nm_dev))
   ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
   !           ~ M [ G^<>(E -+ hw) + G^<>(E +- hw)] M * N
-  !!!$omp parallel default(none) private(nop,ie,A,B) shared(Nphot,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
-  !!!$omp do
+  !$omp parallel default(none) private(nop,ie,A,B) shared(nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
+  allocate(B(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev))
+  !$omp do
   do ie=1,nen
     ! Sig^<(E)
     A = 0.0d0
     if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop)
     if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_lesser(:,:,ie),nm_dev) 
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+    !$omp critical
+    Sig_lesser(:,:,ie) = A
+    !$omp end critical
     ! Sig^>(E)
     A = 0.0d0
     if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop)
     if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_greater(:,:,ie),nm_dev) 
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+    !$omp critical
+    Sig_greater(:,:,ie) = A
+    !$omp end critical
   enddo  
-  !!!$omp end do
-  !!!$omp end parallel
-  Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
+  !$omp end do
   deallocate(A,B)
+  !$omp end parallel
+  Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
 end subroutine calc_sigma_ephoton_monochromatic
 
 ! 2D GW solver with one periodic direction (z)
