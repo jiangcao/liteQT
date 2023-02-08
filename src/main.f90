@@ -1,7 +1,6 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg
-use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D
-use mod_string, only : string
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device
+use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
@@ -14,6 +13,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: P_retarded,P_lesser,P_greater
 complex(8), allocatable,dimension(:,:,:,:) :: W_retarded,W_lesser,W_greater
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greater
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+complex(8), allocatable :: Pmn(:,:,:,:)
 
 logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz
 integer :: nen
@@ -23,6 +23,7 @@ real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0
+real(8) :: intensity,hw
 
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -53,6 +54,7 @@ if (ltrans) then
     if (lkz) then
       read(10,*) nkz
     endif
+    read(10,*) hw,intensity
 end if
 close(10)
 
@@ -187,7 +189,7 @@ if (ltrans) then
         G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
         W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
         Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
-    else
+    else ! 1d case
       print *, 'Build the full device H'
       print *, 'length=',length
       allocate(Ham(nb*length,nb*length,1))
@@ -247,7 +249,7 @@ if (ltrans) then
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
           do j=1, size(V,2)
-              write(11,'(2I6,2F15.4)') i,j, dble(V(i,j,1)), aimag(V(i,j,1))
+              write(11,'(2I6,2E15.4)') i,j, dble(V(i,j,1)), aimag(V(i,j,1))
           end do
           write(11,*)
       end do
@@ -256,7 +258,7 @@ if (ltrans) then
       open(unit=11,file='Ham.dat',status='unknown')
       do i=1, size(Ham,1)
           do j=1, size(Ham,2)
-              write(11,'(2I6,2F15.4)') i,j, dble(Ham(i,j,1)), aimag(Ham(i,j,1))
+              write(11,'(2I6,2E15.4)') i,j, dble(Ham(i,j,1)), aimag(Ham(i,j,1))
           end do
           write(11,*)
       end do
@@ -272,13 +274,42 @@ if (ltrans) then
           H00ld(ib,ib,1,1)=H00ld(ib,ib,1,1)+pot(1)
           H00ld(ib,ib,2,1)=H00ld(ib,ib,2,1)+pot(length)
       end do
-      nm_dev=nb*length    
-      !    
-      call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
-        G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
-        W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-        Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+      nm_dev=nb*length  
+      !  
+      ! momentum operator   
+      allocate(Pmn(nb*length,nb*length,3,1))
+      call w90_momentum_full_device(Pmn(:,:,:,1),0.0d0,length,NS,'approx')
+      !
+      open(unit=11,file='Px.dat',status='unknown')      
+      do i=1, size(Pmn,1)
+          do j=1, size(Pmn,2)
+              write(11,'(2I6,2E15.4)') i,j, dble(Pmn(i,j,1,1)), aimag(Pmn(i,j,1,1))
+          end do
+          write(11,*)
+      end do
+      close(11)    
+      !
+      open(unit=11,file='Py.dat',status='unknown')      
+      do i=1, size(Pmn,1)
+          do j=1, size(Pmn,2)
+              write(11,'(2I6,2E15.4)') i,j, dble(Pmn(i,j,2,1)), aimag(Pmn(i,j,2,1))
+          end do
+          write(11,*)
+      end do
+      close(11)
+      !
+      ! e photon
+      call green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),&
+          Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
+          G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+          Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+      !
+!      call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+!        alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+!        G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
+!        W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+!        Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
     endif 
     
     deallocate(pot)
@@ -303,6 +334,7 @@ if (ltrans) then
     deallocate(Sig_greater_new)
     deallocate(en)    
     deallocate(V)
+    deallocate(Pmn)
         
 end if
 

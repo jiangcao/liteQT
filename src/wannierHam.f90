@@ -20,6 +20,9 @@ INTEGER :: ymin,ymax,xmin,xmax,nb,nx,ny,nvb, spin_deg
 COMPLEX(8), PARAMETER :: zzero = dcmplx(0.0d0,0.0d0)
 COMPLEX(8), PARAMETER :: z1j = dcmplx(0.0d0,1.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
+REAL(8), PARAMETER :: m0=5.6856D-16 ! eV s2 / cm2
+REAL(8), PARAMETER :: hbar=6.58211899D-16 ! eV s
+REAL(8), PARAMETER :: c0=2.998d8 ! m/s
 
 public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_MAT_DEF_2D_kv, w90_plot_bz,w90_MAT_DEF_ribbon_simple
 public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
@@ -601,7 +604,7 @@ implicit none
 integer, intent(in) :: length
 integer, intent(in), optional :: NS
 real(8), intent(in) :: ky
-complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham ! momentum matrix [eV s / m]
+complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham ! momentum matrix [eV]
 character(len=*),intent(in)::method
 integer :: i,j, k,v
 real(8), dimension(3) :: kv, r
@@ -635,24 +638,26 @@ END SUBROUTINE w90_momentum_full_device
 SUBROUTINE calc_momentum_operator(method)
 implicit none
 character(len=*),intent(in)::method
-REAL(8), PARAMETER  :: m0=5.6856D-16 ! eV s2 / cm2
-REAL(8), PARAMETER  :: hbar=6.58211899D-16 ! eV s
 integer::io,jo,ix,iy,mx,my,mo
-if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV s / m]
+real(8)::r(3)
+complex(8)::pre_fact
+if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV]
+pre_fact=1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar*1.0d2 * c0  ! multiply light-speed so c0*pmn in energy eV 
 select case (method)
   case ('approx')
   ! use wannier centers, point-like orbitals
     pmn = 0.0d0
     do io=1,NB
       do jo=1,NB
-        do ix=1,nx
-          do iy=1,ny
-            pmn(:,io,jo,ix,iy)=Hr(io,jo,ix,iy)*( wannier_center(:,io) - wannier_center(:,jo) )
+        do ix=xmin,xmax
+          do iy=ymin,ymax
+            r = dble(ix)*alpha + dble(iy)*beta + wannier_center(:,io) - wannier_center(:,jo)
+            pmn(:,io,jo,ix-xmin+1,iy-ymin+1)=Hr(io,jo,ix-xmin+1,iy-ymin+1)*r
           enddo
         enddo
       enddo
     enddo
-    pmn=pmn*1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar*1.0d2
+    pmn(:,:,:,:,:)=pmn(:,:,:,:,:)*pre_fact
   case ('exact')
   ! use position operator : im_0/hbar sum_{R'l} H_{nl}(R-R') r_{lm}(R') - r_{nl}(R-R') H_{lm}(R')
     pmn = 0.0d0
@@ -664,8 +669,8 @@ select case (method)
               do mx=xmin,xmax
                 do my=ymin,ymax
                   if (((ix-mx)>=xmin).and.((ix-mx)<=xmax).and.((iy-my)>=ymin).and.((iy-my)<=ymax)) then
-                  pmn(:,io,jo,ix,iy)=pmn(:,io,jo,ix,iy)+&
-                    &Hr(io,mo,ix-mx,iy-my)*rmn(:,mo,jo,mx,my)-rmn(:,io,mo,ix-mx,iy-my)*Hr(mo,jo,mx,my)
+                  pmn(:,io,jo,ix-xmin+1,iy-ymin+1)=pmn(:,io,jo,ix-xmin+1,iy-ymin+1)+&
+                    &Hr(io,mo,ix-mx-xmin+1,iy-my-ymin+1)*rmn(:,mo,jo,mx-xmin+1,my-ymin+1)-rmn(:,io,mo,ix-mx-xmin+1,iy-my-ymin+1)*Hr(mo,jo,mx-xmin+1,my-ymin+1)
                   endif
                 enddo
               enddo
@@ -674,8 +679,10 @@ select case (method)
         enddo
       enddo
     enddo
-    pmn=pmn*1.0d-8*dcmplx(0.0d0,1.0d0)*m0/hbar*1.0d2
+    pmn(:,:,:,:,:)=pmn(:,:,:,:,:)*pre_fact
   case default
+    print *, 'Unknown method!!'
+    call abort
 end select
 END SUBROUTINE
 

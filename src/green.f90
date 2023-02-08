@@ -13,33 +13,39 @@ public :: green_solve_ephoton_freespace_1D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
-real(8), parameter :: hbar=1.0546e-34 ! m^2 kg / s
-real(8), parameter :: m0=9.109e-31 ! kg
-real(8), parameter :: eps0=8.854e-12 ! C/V/m 
-real(8), parameter :: c0=2.998e8 ! m/s
-real(8), parameter :: e0=1.6022e-19 ! C
+real(8), parameter :: hbar=1.0546d-34 ! m^2 kg / s
+real(8), parameter :: m0=9.109d-31 ! kg
+real(8), parameter :: eps0=8.854d-12 ! C/V/m 
+real(8), parameter :: c0=2.998d8 ! m/s
+real(8), parameter :: e0=1.6022d-19 ! C
 
 CONTAINS
 
-subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
-  nen,En,nb,ns,Ham,H00lead,H10lead,T,&
+subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,&
   Pmn,polarization,intensity,hw,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
 implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
-real(8), intent(in) :: En(nen), temps,tempd, mus, mud, Lx,hw
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, Lx,spindeg,alpha_mix 
+real(8), intent(in) :: hw ! hw is photon energy in eV
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
-complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV s / m]
+complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 real(8), intent(in) :: polarization(3) ! light polarization vector 
 real(8), intent(in) :: intensity ! [W/m^2]
-real(8), parameter :: pre_fact=(hbar/m0)**2/(2.0d0*eps0*c0**3) 
+real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
 !---------
+real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 integer::ie,nop,i,iter
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
 complex(8),allocatable::M(:,:) ! e-photon coupling matrix
 real(8)::Nphot,mu(2)
+  print *,'====== green_solve_ephoton_freespace_1D ======'
+  allocate(tot_cur(nm_dev,nm_dev))
+  allocate(tot_ecur(nm_dev,nm_dev))
+  allocate(cur(nm_dev,nm_dev,nen))
   mu=(/ mus, mud /)
   allocate(siglead(NB*NS,NB*NS,nen,2))
   siglead=dcmplx(0.0d0,0.0d0)  
@@ -47,10 +53,10 @@ real(8)::Nphot,mu(2)
   M=dcmplx(0.0d0,0.0d0)
   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
   do i=1,3
-    M=M+ polarization(i) * Pmn(:,:,i)
-  enddo
-  M=M* pre_fact/ hw
-  Nphot=intensity / (hw * e0)
+    M=M+ polarization(i) * Pmn(:,:,i) 
+  enddo    
+  print *, 'pre_fact=', pre_fact
+  print *,'hw=',hw,'I=',intensity  
   nop=floor(hw / (En(2)-En(1)))
   do iter=0,niter
     ! empty files for sancho 
@@ -65,9 +71,23 @@ real(8)::Nphot,mu(2)
     call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
     call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
     call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
+    call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
+    call write_current('I',iter,tot_cur,length,NB,Lx)
+    call write_current('EI',iter,tot_ecur,length,NB,Lx)
+    call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
     !
     print *, 'calc Sig'
-    call calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,Nphot,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
+    call calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+    Sig_retarded_new=Sig_retarded_new*pre_fact*intensity/hw**2
+    Sig_greater_new=Sig_greater_new*pre_fact*intensity/hw**2
+    Sig_lesser_new=Sig_lesser_new*pre_fact*intensity/hw**2
+    ! mixing with the previous one
+    Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
+    Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
+    Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)  
     ! get leads sigma
     siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
     siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
@@ -76,12 +96,13 @@ real(8)::Nphot,mu(2)
     call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
   enddo
   deallocate(M,siglead)
+  deallocate(cur,tot_cur,tot_ecur)
 end subroutine green_solve_ephoton_freespace_1D
 ! calculate e-photon self-energies in the monochromatic assumption
-subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,Nphot,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
+subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
 implicit none
 integer,intent(in)::nm_dev,length,nen,nop
-real(8),intent(in)::en(nen),Nphot
+real(8),intent(in)::en(nen)
 complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
 complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_lesser,G_greater
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen)::Sig_retarded,Sig_lesser,Sig_greater
@@ -93,25 +114,26 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   Sig_retarded=0.0d0
   allocate(B(nm_dev,nm_dev))
   allocate(A(nm_dev,nm_dev))
-  ! Sig^<> = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
-  !$omp parallel default(none) private(nop,ie,A,B) shared(Nphot,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
-  !$omp do
+  ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
+  !           ~ M [ G^<>(E -+ hw) + G^<>(E +- hw)] M * N
+  !!!$omp parallel default(none) private(nop,ie,A,B) shared(Nphot,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
+  !!!$omp do
   do ie=1,nen
-    ! Sig^<
+    ! Sig^<(E)
     A = 0.0d0
-    if (ie-nop>=1) A =A+ Nphot * G_lesser(:,:,ie-nop)
-    if (ie+nop<=nen) A =A+ (Nphot+1) * G_lesser(:,:,ie+nop)
+    if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop)
+    if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_lesser,nm_dev) 
-    ! Sig^>
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_lesser(:,:,ie),nm_dev) 
+    ! Sig^>(E)
     A = 0.0d0
-    if (ie-nop>=1) A =A+ (Nphot+1) * G_greater(:,:,ie-nop)
-    if (ie+nop<=nen) A =A+ Nphot * G_greater(:,:,ie+nop)
+    if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop)
+    if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_greater,nm_dev) 
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,Sig_greater(:,:,ie),nm_dev) 
   enddo  
-  !$omp end do
-  !$omp end parallel
+  !!!$omp end do
+  !!!$omp end parallel
   Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
   deallocate(A,B)
 end subroutine calc_sigma_ephoton_monochromatic
@@ -308,6 +330,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
 complex(8) :: dE
 real(8)::nelec(2),mu(2),pelec(2)
+print *,'====== green_solve_gw_1D ======'
 allocate(siglead(NB*NS,NB*NS,nen,2))
 siglead=dcmplx(0.0d0,0.0d0)
 allocate(B(nm_dev,nm_dev))
@@ -692,11 +715,10 @@ real(8),parameter::tpi=6.28318530718
   do ie=1,nen
     do io=1,nm_dev
       do jo=1,nm_dev
-        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie)
+        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie) 
       enddo
-    enddo
-    !call zgemm('n','t',nm_dev,nm_dev,nm_dev,cone,H,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)       
-    B=B*2.0d0*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+    enddo    
+    B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)*2.0d0
     if (present(cur)) cur(:,:,ie) = dble(B)
     if (present(tot_ecur)) tot_ecur=tot_ecur+ en(ie)*dble(B)
     tot_cur=tot_cur+ dble(B)          
