@@ -55,9 +55,10 @@ real(8)::Nphot,mu(2)
   do i=1,3
     M=M+ polarization(i) * Pmn(:,:,i) 
   enddo    
-  print *, 'pre_fact=', pre_fact
-  print *,'hw=',hw,'I=',intensity  
+  !print *, 'pre_fact=', pre_fact
+  print '(a8,f15.4,a8,e15.4)','hw=',hw,'I=',intensity  
   nop=floor(hw / (En(2)-En(1)))
+  print *,'nop=',nop
   do iter=0,niter
     ! empty files for sancho 
     open(unit=101,file='sancho_gbb.dat',status='unknown')
@@ -67,10 +68,7 @@ real(8)::Nphot,mu(2)
     open(unit=101,file='sancho_sig.dat',status='unknown')
     close(101)
     print *, 'calc G'  
-    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))
-    call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-    call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))    
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
     call write_current('I',iter,tot_cur,length,NB,Lx)
@@ -111,12 +109,12 @@ integer::ie
 complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   Sig_lesser=0.0d0
   Sig_greater=0.0d0
-  Sig_retarded=0.0d0
+  Sig_retarded=0.0d0  
   ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
   !           ~ M [ G^<>(E -+ hw) + G^<>(E +- hw)] M * N
-  !$omp parallel default(none) private(nop,ie,A,B) shared(nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
+  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
   allocate(B(nm_dev,nm_dev))
-  allocate(A(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev))  
   !$omp do
   do ie=1,nen
     ! Sig^<(E)
@@ -703,6 +701,7 @@ end if
 if (solve_Gr) G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
 end subroutine green_calc_g
 
+! calculate bond current using I_ij = H_ij G<_ji - H_ji G^<_ij
 subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
 implicit none
 complex(8),intent(in)::H(nm_dev,nm_dev),G_lesser(nm_dev,nm_dev,nen)
@@ -713,7 +712,7 @@ real(8),intent(out),optional::tot_ecur(nm_dev,nm_dev) ! total bond energy curren
 real(8),intent(out),optional::cur(nm_dev,nm_dev,nen) ! energy resolved bond current density
 !----
 complex(8),allocatable::B(:,:)
-integer::i,j,ie,io,jo
+integer::ie,io,jo
 real(8),parameter::tpi=6.28318530718  
   allocate(B(nm_dev,nm_dev))
   tot_cur=0.0d0  
@@ -721,16 +720,39 @@ real(8),parameter::tpi=6.28318530718
   do ie=1,nen
     do io=1,nm_dev
       do jo=1,nm_dev
-        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie) 
+        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie) - H(jo,io)*G_lesser(io,jo,ie)
       enddo
     enddo    
-    B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)*2.0d0
+    B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
     if (present(cur)) cur(:,:,ie) = dble(B)
     if (present(tot_ecur)) tot_ecur=tot_ecur+ en(ie)*dble(B)
     tot_cur=tot_cur+ dble(B)          
   enddo
   deallocate(B)
 end subroutine calc_bond_current
+
+! calculate scattering collision integral from the self-energy
+! I = Sig> G^< - Sig< G^>
+subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,I)
+implicit none
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_greater,G_lesser,Sig_lesser,Sig_greater
+real(8),intent(in)::en(nen),spindeg
+integer,intent(in)::nen,nm_dev
+complex(8),intent(out)::I(nm_dev,nm_dev) ! collision integral
+!----
+complex(8),allocatable::B(:,:)
+integer::ie
+real(8),parameter::tpi=6.28318530718  
+  allocate(B(nm_dev,nm_dev))
+  I=dcmplx(0.0d0,0.0d0)
+  do ie=1,nen
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,Sig_greater(:,:,ie),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Sig_lesser(:,:,ie),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev) 
+    I(:,:)=I(:,:)+B(:,:)
+  enddo
+  deallocate(B)
+end subroutine calc_collision
+
 
 ! write current into file 
 subroutine write_current(dataset,i,cur,length,NB,Lx)
