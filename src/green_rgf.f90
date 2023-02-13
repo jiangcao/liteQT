@@ -139,9 +139,7 @@ subroutine green_RGF_CMS(TEMP,nm,nx,ny,EKZ,E,mul,mur,Sii,Hii,H1i,sigma_lesser_ph
      call zgemm('n','n',nm,nm,nm,alpha,G00,nm,B,nm,beta,A,nm)
      B=C+A
      call zgemm('c','n',nm,nm,nm,alpha,H10,nm,B,nm,beta,A,nm)      !!! G<_i+1,i     
-     Jdens(:,:,l)=2.0d0*dble(A(:,:))
-     cur(1,1,l)=2.0d0*dble(Hii(1,2,l+1)*Gn(2,1))        
-     cur(2,2,l)=2.0d0*dble(Hii(2,1,l+1)*Gn(1,2))
+     Jdens(:,:,l)=2.0d0*dble(A(:,:))     
 
 !     A=Gn
 !     call zgemm('n','c',nm,nm,nm,alpha,Gl(:,:,l),nm,H10,nm,beta,B,nm) 
@@ -215,5 +213,115 @@ subroutine green_RGF_CMS(TEMP,nm,nx,ny,EKZ,E,mul,mur,Sii,Hii,H1i,sigma_lesser_ph
   deallocate(Gl)
   deallocate(Gln)
 end subroutine green_RGF_CMS
+
+
+subroutine invert(A,nn)
+  implicit none      
+  integer :: info,lda,lwork,nn      
+  integer, dimension(:), allocatable :: ipiv
+  complex(8), dimension(nn,nn),intent(inout) :: A
+  complex(8), dimension(:), allocatable :: work
+  allocate(work(nn*nn))
+  allocate(ipiv(nn))
+  call zgetrf(nn,nn,A,nn,ipiv,info)
+  call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+  deallocate(work)
+  deallocate(ipiv)
+end subroutine invert
+
+Function ferm(a)
+	Real (8) a,ferm
+	ferm=1.0d0/(1.0d0+Exp(a))
+End Function ferm
+
+
+! Sancho-Rubio 
+subroutine sancho(nm,E,S00,H00,H10,G00,GBB)
+implicit none
+  complex(8), parameter :: alpha = cmplx(1.0d0,0.0d0)
+  complex(8), parameter :: beta  = cmplx(0.0d0,0.0d0)
+  integer i,j,k,nm,nmax
+  COMPLEX(8) :: z
+  real(8) :: E,error
+  REAL(8) :: TOL=1.0D-100  ! [eV]
+  COMPLEX(8), INTENT(IN) ::  S00(nm,nm), H00(nm,nm), H10(nm,nm)
+  COMPLEX(8), INTENT(OUT) :: G00(nm,nm), GBB(nm,nm)
+  COMPLEX(8), ALLOCATABLE :: A(:,:), B(:,:), C(:,:), tmp(:,:)
+  COMPLEX(8), ALLOCATABLE :: H_BB(:,:), H_SS(:,:), H_01(:,:), H_10(:,:), Id(:,:)
+  !COMPLEX(8), ALLOCATABLE :: WORK(:)
+  !COMPLEX(8), EXTERNAL :: ZLANGE
+  Allocate( H_BB(nm,nm) )
+  Allocate( H_SS(nm,nm) )
+  Allocate( H_01(nm,nm) )
+  Allocate( H_10(nm,nm) )
+  Allocate( Id(nm,nm) )
+  Allocate( A(nm,nm) )
+  Allocate( B(nm,nm) )
+  Allocate( C(nm,nm) )
+  Allocate( tmp(nm,nm) )
+  nmax=100
+  z = cmplx(E,1.0d-3)
+  Id=0.0d0
+  tmp=0.0d0
+  do i=1,nm
+     Id(i,i)=1.0d0
+     tmp(i,i)=cmplx(0.0d0,1.0d0)
+  enddo
+  H_BB = H00
+  H_10 = H10
+  H_01 = TRANSPOSE( CONJG( H_10 ) )
+  H_SS = H00
+  do i = 1, nmax
+    A = z*S00 - H_BB
+    !
+    call invert(A,nm)
+    !
+    call zgemm('n','n',nm,nm,nm,alpha,A,nm,H_10,nm,beta,B,nm) 
+    call zgemm('n','n',nm,nm,nm,alpha,H_01,nm,B,nm,beta,C,nm) 
+    H_SS = H_SS + C
+    H_BB = H_BB + C
+    call zgemm('n','n',nm,nm,nm,alpha,H_10,nm,B,nm,beta,C,nm) 
+    call zgemm('n','n',nm,nm,nm,alpha,A,nm,H_01,nm,beta,B,nm) 
+    call zgemm('n','n',nm,nm,nm,alpha,H_10,nm,B,nm,beta,A,nm)  
+    H_10 = C    
+    H_BB = H_BB + A
+    call zgemm('n','n',nm,nm,nm,alpha,H_01,nm,B,nm,beta,C,nm) 
+    H_01 = C 
+    ! NORM --> inspect the diagonal of A
+    error=0.0d0
+    DO k=1,nm
+     DO j=1,nm
+      error=error+sqrt(aimag(C(k,j))**2+Dble(C(k,j))**2)
+     END DO
+    END DO	
+    tmp=H_SS
+    IF ( abs(error) < TOL ) THEN	
+      EXIT
+    ELSE
+    END IF
+    IF (i .EQ. nmax) THEN
+      write(*,*) 'SEVERE warning: nmax reached in sancho!!!',error
+      call abort
+    END IF
+  enddo
+  G00 = z*S00 - H_SS
+  !
+  call invert(G00,nm)
+  !
+  GBB = z*S00 - H_BB
+  !
+  call invert(GBB,nm)
+  !
+  Deallocate( tmp )
+  Deallocate( A )
+  Deallocate( B )
+  Deallocate( C )
+  Deallocate( H_BB )
+  Deallocate( H_SS )
+  Deallocate( H_01 )
+  Deallocate( H_10 )
+  Deallocate( Id )
+end subroutine sancho
+
 
 end module green_rgf

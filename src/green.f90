@@ -10,6 +10,7 @@ private
 public :: green_calc_g
 public :: green_solve_gw_1D,green_solve_gw_2D
 public :: green_solve_ephoton_freespace_1D
+public :: green_solve_gw_ephoton_1D
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -20,6 +21,46 @@ real(8), parameter :: c0=2.998d8 ! m/s
 real(8), parameter :: e0=1.6022d-19 ! C
 
 CONTAINS
+
+subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
+  Pmn,polarization,intensity,hw,&
+  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+  W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+  Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+implicit none
+integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
+complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
+complex(8), intent(in):: V(nm_dev,nm_dev)
+complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+real(8), intent(in) :: polarization(3) ! light polarization vector 
+real(8), intent(in) :: intensity ! [W/m^2]
+real(8), intent(in) :: hw ! hw is photon energy in eV
+complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
+!----
+integer::iter
+real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3)   
+  print *,'======================================='
+  print *,'====== green_solve_gw_ephoton_1D ======'
+  print *,'======================================='
+  do iter=0,niter
+    call green_solve_gw_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+            alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
+            G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),P_retarded(:,:,:),P_lesser(:,:,:),P_greater(:,:,:),&
+            W_retarded(:,:,:),W_lesser(:,:,:),W_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
+            Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:))
+    call green_solve_ephoton_freespace_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+            0.0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
+            Pmn(:,:,:),polarization,intensity,hw,&
+            G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
+            Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:))       
+    ! combine e-photon Sig to GW Sig
+    Sig_retarded = Sig_retarded+ Sig_retarded_new 
+    Sig_lesser  = Sig_lesser+ Sig_lesser_new 
+    Sig_greater = Sig_greater+ Sig_greater_new 
+  enddo
+end subroutine green_solve_gw_ephoton_1D
 
 subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,&
@@ -65,18 +106,18 @@ real(8)::Nphot,mu(2)
   print '(a8,f15.4)','dE(meV)=',(En(2)-En(1))*1.0d3
   do iter=0,niter
     ! empty files for sancho 
-    open(unit=101,file='sancho_gbb.dat',status='unknown')
-    close(101)
-    open(unit=101,file='sancho_g00.dat',status='unknown')
-    close(101)
-    open(unit=101,file='sancho_sig.dat',status='unknown')
-    close(101)
+!    open(unit=101,file='sancho_gbb.dat',status='unknown')
+!    close(101)
+!    open(unit=101,file='sancho_g00.dat',status='unknown')
+!    close(101)
+!    open(unit=101,file='sancho_sig.dat',status='unknown')
+!    close(101)
     print *, 'calc G'  
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))    
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
-    call write_current('I',iter,tot_cur,length,NB,NS*2,Lx)
-    call write_current('EI',iter,tot_ecur,length,NB,NS*2,Lx)
+    call write_current('I',iter,tot_cur,length,NB,1,Lx)
+    call write_current('EI',iter,tot_ecur,length,NB,1,Lx)
     call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
     call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
     call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -168,6 +209,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
 complex(8) :: dE
 real(8)::nelec(2),mu(2),pelec(2)
+print *,'====== green_solve_gw_2D ======'
 allocate(siglead(NB*NS,NB*NS,nen,2,nphiz))
 siglead=dcmplx(0.0d0,0.0d0)
 allocate(B(nm_dev,nm_dev))
@@ -175,12 +217,12 @@ mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 do iter=0,niter
   ! empty files for sancho 
-  open(unit=101,file='sancho_gbb.dat',status='unknown')
-  close(101)
-  open(unit=101,file='sancho_g00.dat',status='unknown')
-  close(101)
-  open(unit=101,file='sancho_sig.dat',status='unknown')
-  close(101)
+!  open(unit=101,file='sancho_gbb.dat',status='unknown')
+!  close(101)
+!  open(unit=101,file='sancho_g00.dat',status='unknown')
+!  close(101)
+!  open(unit=101,file='sancho_sig.dat',status='unknown')
+!  close(101)
   print *, 'calc G'  
   do ikz=1,nphiz
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu,(/temps,tempd/))
@@ -342,7 +384,9 @@ complex(8) :: dE
 real(8)::nelec(2),mu(2),pelec(2)
 print *,'====== green_solve_gw_1D ======'
 allocate(siglead(NB*NS,NB*NS,nen,2))
-siglead=dcmplx(0.0d0,0.0d0)
+! get leads sigma
+siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
+siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
 allocate(B(nm_dev,nm_dev))
 allocate(tot_cur(nm_dev,nm_dev))
 allocate(tot_ecur(nm_dev,nm_dev))
@@ -353,12 +397,12 @@ mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 do iter=0,niter
   ! empty files for sancho 
-  open(unit=101,file='sancho_gbb.dat',status='unknown')
-  close(101)
-  open(unit=101,file='sancho_g00.dat',status='unknown')
-  close(101)
-  open(unit=101,file='sancho_sig.dat',status='unknown')
-  close(101)
+!  open(unit=101,file='sancho_gbb.dat',status='unknown')
+!  close(101)
+!  open(unit=101,file='sancho_g00.dat',status='unknown')
+!  close(101)
+!  open(unit=101,file='sancho_sig.dat',status='unknown')
+!  close(101)
   print *, 'calc G'  
   call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))
  ! if (iter == 0) then     
@@ -426,10 +470,10 @@ do iter=0,niter
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_greater(:,:,nop),nm_dev,czero,B,nm_dev) 
     call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_greater(:,:,nop),nm_dev)   
   enddo
-  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-  call write_matrix_summed_overE('W_r',iter,W_retarded,nen,en,length,NB,(/1.0,1.0/))
+!  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+!  call write_matrix_summed_overE('W_r',iter,W_retarded,nen,en,length,NB,(/1.0,1.0/))
   !
   print *, 'calc SigGW'
   ndiag=NB*NS*2
@@ -656,9 +700,9 @@ do ie = 1, ne
     sig_greater(:,:) = dcmplx(0.0d0,0.0d0)      
   end if    
   ! compute and add contact self-energies    
-  open(unit=101,file='sancho_gbb.dat',status='unknown',position='append')
-  open(unit=102,file='sancho_g00.dat',status='unknown',position='append')
-  open(unit=103,file='sancho_sig.dat',status='unknown',position='append')
+!  open(unit=101,file='sancho_gbb.dat',status='unknown',position='append')
+!  open(unit=102,file='sancho_g00.dat',status='unknown',position='append')
+!  open(unit=103,file='sancho_sig.dat',status='unknown',position='append')
   do i = 1,num_lead
     NM = nm_lead(i)    
     allocate(S00(nm,nm))
@@ -669,9 +713,9 @@ do ie = 1, ne
     call sancho(NM,E(ie),S00,H00(1:nm,1:nm,i)+siglead(1:nm,1:nm,ie,i),H10(1:nm,1:nm,i),G00,GBB)
     call zgemm('c','n',nm_dev,nm,nm,cone,T(1:nm,1:nm_dev,i),nm,G00,nm,czero,A,nm_dev) 
     call zgemm('n','n',nm_dev,nm_dev,nm,cone,A,nm_dev,T(1:nm,1:nm_dev,i),nm,czero,sig,nm_dev)  
-    write(101,'(i4,2E15.4)') i, E(ie), -aimag(trace(GBB,nm))*2.0d0
-    write(102,'(i4,2E15.4)') i, E(ie), -aimag(trace(G00,nm))*2.0d0
-    write(103,'(i4,2E15.4)') i, E(ie), -aimag(trace(sig,nm_dev))*2.0d0
+!    write(101,'(i4,2E15.4)') i, E(ie), -aimag(trace(GBB,nm))*2.0d0
+!    write(102,'(i4,2E15.4)') i, E(ie), -aimag(trace(G00,nm))*2.0d0
+!    write(103,'(i4,2E15.4)') i, E(ie), -aimag(trace(sig,nm_dev))*2.0d0
     if (solve_Gr) G_retarded(:,:,ie) = G_retarded(:,:,ie) - sig(:,:)
     if ((present(G_lesser)).or.(present(G_greater))) then      
       fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
@@ -683,9 +727,9 @@ do ie = 1, ne
     end if
     deallocate(S00,G00,GBB,A)
   end do  
-  close(101)
-  close(102)
-  close(103)
+!  close(101)
+!  close(102)
+!  close(103)
   if (solve_Gr) then
     do i = 1,nm_dev
       G_retarded(i,i,ie) = G_retarded(i,i,ie) + dcmplx(E(ie),0.0d0)
