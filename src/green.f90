@@ -38,6 +38,7 @@ real(8), intent(in) :: intensity ! [W/m^2]
 real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
 !---------
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
+complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
 integer::ie,nop,i,iter
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
 complex(8),allocatable::M(:,:) ! e-photon coupling matrix
@@ -46,6 +47,8 @@ real(8)::Nphot,mu(2)
   allocate(tot_cur(nm_dev,nm_dev))
   allocate(tot_ecur(nm_dev,nm_dev))
   allocate(cur(nm_dev,nm_dev,nen))
+  allocate(Ispec(nm_dev,nm_dev,nen))
+  allocate(Itot(nm_dev,nm_dev))
   mu=(/ mus, mud /)
   allocate(siglead(NB*NS,NB*NS,nen,2))
   siglead=dcmplx(0.0d0,0.0d0)  
@@ -59,6 +62,7 @@ real(8)::Nphot,mu(2)
   print '(a8,f15.4,a8,e15.4)','hw=',hw,'I=',intensity  
   nop=floor(hw / (En(2)-En(1)))
   print *,'nop=',nop
+  print '(a8,f15.4)','dE(meV)=',(En(2)-En(1))*1.0d3
   do iter=0,niter
     ! empty files for sancho 
     open(unit=101,file='sancho_gbb.dat',status='unknown')
@@ -71,8 +75,8 @@ real(8)::Nphot,mu(2)
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))    
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
-    call write_current('I',iter,tot_cur,length,NB,Lx)
-    call write_current('EI',iter,tot_ecur,length,NB,Lx)
+    call write_current('I',iter,tot_cur,length,NB,NS*2,Lx)
+    call write_current('EI',iter,tot_ecur,length,NB,NS*2,Lx)
     call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
     call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
     call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -92,9 +96,13 @@ real(8)::Nphot,mu(2)
     call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
     call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
     call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+    ! calculate collision integral
+    call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
+    call write_spectrum('Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
   enddo
   deallocate(M,siglead)
   deallocate(cur,tot_cur,tot_ecur)
+  deallocate(Ispec,Itot)
 end subroutine green_solve_ephoton_freespace_1D
 ! calculate e-photon self-energies in the monochromatic assumption
 subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
@@ -122,19 +130,15 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
     if (ie-nop>=1) A =A+ G_lesser(:,:,ie-nop)
     if (ie+nop<=nen) A =A+ G_lesser(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
-    !$omp critical
-    Sig_lesser(:,:,ie) = A
-    !$omp end critical
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
+    Sig_lesser(:,:,ie) = A    
     ! Sig^>(E)
     A = 0.0d0
     if (ie-nop>=1) A =A+ G_greater(:,:,ie-nop)
     if (ie+nop<=nen) A =A+ G_greater(:,:,ie+nop)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,A,nm_dev,czero,B,nm_dev) 
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
-    !$omp critical
-    Sig_greater(:,:,ie) = A
-    !$omp end critical
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
+    Sig_greater(:,:,ie) = A    
   enddo  
   !$omp end do
   deallocate(A,B)
@@ -324,11 +328,13 @@ real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
 complex(8), intent(in):: V(nm_dev,nm_dev)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+!----
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
 complex(8),allocatable,dimension(:,:):: B ! tmp matrix
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 integer :: iter,ie,nopmax
 integer :: i,j,nm,nop,l,h,iop,ndiag
+complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
@@ -341,6 +347,8 @@ allocate(B(nm_dev,nm_dev))
 allocate(tot_cur(nm_dev,nm_dev))
 allocate(tot_ecur(nm_dev,nm_dev))
 allocate(cur(nm_dev,nm_dev,nen))
+allocate(Ispec(nm_dev,nm_dev,nen))
+allocate(Itot(nm_dev,nm_dev))
 mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 do iter=0,niter
@@ -362,8 +370,8 @@ do iter=0,niter
  ! end if  
   call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
   call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
-  call write_current('I',iter,tot_cur,length,NB,Lx)
-  call write_current('EI',iter,tot_ecur,length,NB,Lx)
+  call write_current('I',iter,tot_cur,length,NB,NS,Lx)
+  call write_current('EI',iter,tot_ecur,length,NB,NS,Lx)
   call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
   call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
@@ -418,10 +426,10 @@ do iter=0,niter
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_greater(:,:,nop),nm_dev,czero,B,nm_dev) 
     call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_greater(:,:,nop),nm_dev)   
   enddo
-!  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-!  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-!  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
-!  call write_matrix_summed_overE('W_r',iter,W_retarded,nen,en,length,NB,(/1.0,1.0/))
+  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_matrix_summed_overE('W_r',iter,W_retarded,nen,en,length,NB,(/1.0,1.0/))
   !
   print *, 'calc SigGW'
   ndiag=NB*NS*2
@@ -474,9 +482,13 @@ do iter=0,niter
   call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
+  !!!! calculate collision integral
+  call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
+  call write_spectrum('Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
 enddo                
 deallocate(siglead)
 deallocate(B,cur,tot_cur,tot_ecur)
+deallocate(Ispec,Itot)
 end subroutine green_solve_gw_1D
 
 
@@ -499,6 +511,7 @@ do i=0,add-1
 enddo
 end subroutine expand_size_bycopy
 
+! calculate number of electrons and holes from G< and G> 
 subroutine calc_n_electron(G_lesser,G_greater,nen,E,NS,NB,nm_dev,nelec,pelec)
 complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen)
 complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen)
@@ -522,6 +535,7 @@ do i=1,nen
 enddo
 end subroutine calc_n_electron
 
+! determine the quasi-fermi level from the Gr and electron/hole number
 subroutine calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,Temp,mu)
 real(8),intent(in)::Temp(2)
 real(8),intent(out)::mu(2)
@@ -595,6 +609,7 @@ deallocate(dos,K)
 end subroutine calc_fermi_level
 
 
+! calculate Gr and optionally G<>
 subroutine green_calc_g(ne,E,num_lead,nm_dev,nm_lead,max_nm_lead,Ham,H00,H10,Siglead,T,Scat_Sig_retarded,Scat_Sig_lesser,Scat_Sig_greater,G_retarded,G_lesser,G_greater,mu,temp,mode)
 implicit none
 integer, intent(in) :: num_lead ! number of leads/contacts
@@ -733,12 +748,13 @@ end subroutine calc_bond_current
 
 ! calculate scattering collision integral from the self-energy
 ! I = Sig> G^< - Sig< G^>
-subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,I)
+subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,I,Ispec)
 implicit none
 complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_greater,G_lesser,Sig_lesser,Sig_greater
 real(8),intent(in)::en(nen),spindeg
 integer,intent(in)::nen,nm_dev
 complex(8),intent(out)::I(nm_dev,nm_dev) ! collision integral
+complex(8),intent(out),optional::Ispec(nm_dev,nm_dev,nen) ! collision integral spectrum
 !----
 complex(8),allocatable::B(:,:)
 integer::ie
@@ -749,28 +765,31 @@ real(8),parameter::tpi=6.28318530718
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,Sig_greater(:,:,ie),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Sig_lesser(:,:,ie),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev) 
     I(:,:)=I(:,:)+B(:,:)
+    if (present(Ispec)) Ispec(:,:,ie)=B(:,:)
   enddo
   deallocate(B)
 end subroutine calc_collision
 
 
 ! write current into file 
-subroutine write_current(dataset,i,cur,length,NB,Lx)
+subroutine write_current(dataset,i,cur,length,NB,NS,Lx)
 character(len=*), intent(in) :: dataset
 real(8), intent(in) :: cur(:,:)
-integer, intent(in)::i,length,NB
+integer, intent(in)::i,length,NB,NS
 real(8), intent(in)::Lx
-integer:: j,ib,jb
+integer:: j,ib,jb,ii
 real(8)::tr
   open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
-  do j = 1,length-1
+  do ii = 1,length-1
     tr=0.0d0          
     do ib=1,nb  
-      do jb=1,nb        
-        tr = tr+ cur((j-1)*nb+ib,j*nb+jb)
+      do jb=1,nb       
+        do j=ii,min(ii+NS-1,length-1)
+          tr = tr+ cur((ii-1)*nb+ib,j*nb+jb)
+        enddo
       enddo                        
     end do
-    write(11,'(2E18.4)') dble(j)*Lx, tr
+    write(11,'(2E18.4)') dble(ii)*Lx, tr
   end do
 end subroutine write_current
 
@@ -820,6 +839,8 @@ end do
 close(11)
 end subroutine write_spectrum
 
+
+! write a matrix summed over energy index into a file
 subroutine write_matrix_summed_overE(dataset,i,G,nen,en,length,NB,coeff)
 character(len=*), intent(in) :: dataset
 complex(8), intent(in) :: G(:,:,:)
