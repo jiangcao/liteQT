@@ -15,7 +15,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -57,6 +57,7 @@ if (ltrans) then
     read(10,*) lephot
     if (lephot) then
       read(10,*) hw,intensity
+      read(10,*) lnogw
     endif
 end if
 close(10)
@@ -303,12 +304,24 @@ if (ltrans) then
       !
       ! e photon
       if (lephot) then
+      
+        if (.not. lnogw) then
           call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
               alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
               Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
               W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
               Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+         
+         else
+         
+           call green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+              alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),&
+              Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
+              G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+              Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+         endif
+         
       else
           call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
             alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
@@ -317,6 +330,7 @@ if (ltrans) then
             Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
       endif
     endif 
+    
     
     deallocate(pot)
     deallocate(H00ld)
@@ -345,5 +359,5 @@ if (ltrans) then
 end if
 
 call w90_free_memory
-
+print *, 'End of program'
 END PROGRAM main

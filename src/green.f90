@@ -40,7 +40,6 @@ real(8), intent(in) :: hw ! hw is photon energy in eV
 complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
 !----
 integer::iter
-real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3)   
   print *,'======================================='
   print *,'====== green_solve_gw_ephoton_1D ======'
   print *,'======================================='
@@ -59,6 +58,9 @@ real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3)
     Sig_retarded = Sig_retarded+ Sig_retarded_new 
     Sig_lesser  = Sig_lesser+ Sig_lesser_new 
     Sig_greater = Sig_greater+ Sig_greater_new 
+    call write_spectrum('gw_eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('gw_eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('gw_eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
   enddo
 end subroutine green_solve_gw_ephoton_1D
 
@@ -91,8 +93,10 @@ real(8)::Nphot,mu(2)
   allocate(Ispec(nm_dev,nm_dev,nen))
   allocate(Itot(nm_dev,nm_dev))
   mu=(/ mus, mud /)
-  allocate(siglead(NB*NS,NB*NS,nen,2))
-  siglead=dcmplx(0.0d0,0.0d0)  
+  allocate(siglead(NB*NS,NB*NS,nen,2))  
+  ! get leads sigma
+  siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
+  siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
   allocate(M(nm_dev,nm_dev))
   M=dcmplx(0.0d0,0.0d0)
   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
@@ -115,12 +119,12 @@ real(8)::Nphot,mu(2)
     print *, 'calc G'  
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))    
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
-    call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
-    call write_current('I',iter,tot_cur,length,NB,1,Lx)
-    call write_current('EI',iter,tot_ecur,length,NB,1,Lx)
-    call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-    call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call write_current_spectrum('eph_Jdens',iter,cur,nen,en,length,NB,Lx)
+    call write_current('eph_I',iter,tot_cur,length,NB,1,Lx)
+    call write_current('eph_EI',iter,tot_ecur,length,NB,1,Lx)
+    call write_spectrum('eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
     !
     print *, 'calc Sig'
     call calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
@@ -134,12 +138,12 @@ real(8)::Nphot,mu(2)
     ! get leads sigma
     siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
     siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)  
-    call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+!    call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
+!    call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+!    call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
     ! calculate collision integral
     call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-    call write_spectrum('Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
   enddo
   deallocate(M,siglead)
   deallocate(cur,tot_cur,tot_ecur)
@@ -186,6 +190,41 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   !$omp end parallel
   Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
 end subroutine calc_sigma_ephoton_monochromatic
+! calculate e-photon self-energies in spontaneous emission and ADD onto the Sig_r<>
+subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
+implicit none
+integer,intent(in)::nm_dev,length,nen,nop
+real(8),intent(in)::en(nen)
+complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_lesser,G_greater
+complex(8),intent(inout),dimension(nm_dev,nm_dev,nen)::Sig_retarded,Sig_lesser,Sig_greater
+!---------
+integer::ie
+complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix  
+  ! Sig^<>(E) = M G^<>(E +- hw) M  
+  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
+  allocate(B(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev))  
+  !$omp do
+  do ie=1,nen
+    ! Sig^<(E)    
+    if (ie+nop<=nen) then 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_lesser(:,:,ie+nop),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
+      Sig_lesser(:,:,ie) =Sig_lesser(:,:,ie)+ A(:,:)
+    endif    
+    ! Sig^>(E)    
+    if (ie-nop>=1) then 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_greater(:,:,ie-nop),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
+      Sig_greater(:,:,ie) =Sig_greater(:,:,ie)+ A(:,:)   
+    endif
+  enddo  
+  !$omp end do
+  deallocate(A,B)
+  !$omp end parallel
+  Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
+end subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission
 
 ! 2D GW solver with one periodic direction (z)
 ! iterating G -> P -> W -> Sig 
@@ -413,12 +452,12 @@ do iter=0,niter
  !   print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
  ! end if  
   call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
-  call write_current_spectrum('Jdens',iter,cur,nen,en,length,NB,Lx)
-  call write_current('I',iter,tot_cur,length,NB,NS,Lx)
-  call write_current('EI',iter,tot_ecur,length,NB,NS,Lx)
-  call write_spectrum('ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum('ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
+  call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
+  call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
+  call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
+  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !        
   print *, 'calc P'  
@@ -522,13 +561,13 @@ do iter=0,niter
     call expand_size_bycopy(Sig_lesser(:,:,ie),nm_dev,NB,2)
     call expand_size_bycopy(Sig_greater(:,:,ie),nm_dev,NB,2)
   enddo
-  call write_spectrum('SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
   !!!! calculate collision integral
   call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-  call write_spectrum('Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
 enddo                
 deallocate(siglead)
 deallocate(B,cur,tot_cur,tot_ecur)
