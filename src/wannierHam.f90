@@ -93,15 +93,10 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     print '(A40)', 'reading Wannier H from file, info:'
     print '(6a5)', 'xmin', 'xmax', 'ymin', 'ymax', 'nb', 'nvb'
     print '(6i5)', xmin, xmax, ymin, ymax, nb, nvb
-    print '(2f5.1)', Lx, Ly
-    print *, 'a1, a2 ='
-    print '(3f5.1)', alpha
-    print '(3f5.1)', beta
+    print '(2a5)', 'Lx', 'Ly'
+    print '(2f5.1)', Lx, Ly    
     b1=cross(beta,gamm)/dot_product(alpha,cross(beta,gamm))
-    b2 = cross(gamm,alpha)/dot_product(beta,cross(gamm,alpha))
-    print *, 'b1, b2 ='
-    print '(3f5.1)', b1
-    print '(3f5.1)', b2
+    b2 = cross(gamm,alpha)/dot_product(beta,cross(gamm,alpha))    
     allocate(Hr(nb,nb,nx,ny))
     Hr(:,:,:,:) = zzero
     do i = 1,n 
@@ -126,10 +121,10 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     allocate(ind(nb))
     call w90_PLOT_BZ(nkx,nky,energ)
     ind = maxloc(energ,2)
-    kt_vbm = mod(ind(nvb),nkx)*dky - pi / Ly ! k transverse corresponding to VBM
+    kt_vbm = mod(ind(nvb),nkx)*dky - pi / Ly ! k transverse corresponding to VBMax
     VBM = energ(nvb,ind(nvb))
     ind = minloc(energ,2)
-    kt_cbm = mod(ind(nvb+1),nkx)*dky - pi / Ly ! k transverse corresponding to CBM
+    kt_cbm = mod(ind(nvb+1),nkx)*dky - pi / Ly ! k transverse corresponding to CBMin
     if (ny .eq. 1) then
         kt_cbm=0.0d0
         kt_vbm=0.0d0

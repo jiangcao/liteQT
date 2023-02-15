@@ -22,6 +22,7 @@ real(8), parameter :: e0=1.6022d-19 ! C
 
 CONTAINS
 
+! driver for solving the GW and e-photon SCBA together   
 subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   Pmn,polarization,intensity,hw,&
@@ -39,10 +40,17 @@ real(8), intent(in) :: intensity ! [W/m^2]
 real(8), intent(in) :: hw ! hw is photon energy in eV
 complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
 !----
+real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
+complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
 integer::iter
   print *,'======================================='
   print *,'====== green_solve_gw_ephoton_1D ======'
   print *,'======================================='
+  allocate(tot_cur(nm_dev,nm_dev))
+  allocate(tot_ecur(nm_dev,nm_dev))
+  allocate(cur(nm_dev,nm_dev,nen))
+  allocate(Ispec(nm_dev,nm_dev,nen))
+  allocate(Itot(nm_dev,nm_dev))
   do iter=0,niter
     call green_solve_gw_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
             alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
@@ -59,11 +67,18 @@ integer::iter
     Sig_lesser  = Sig_lesser+ Sig_lesser_new 
     Sig_greater = Sig_greater+ Sig_greater_new 
     call write_spectrum('gw_eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-    call write_spectrum('gw_eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('gw_eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    !call write_spectrum('gw_eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+    !call write_spectrum('gw_eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
+    call write_current_spectrum('gw_eph_Jdens',iter,cur,nen,en,length,NB,Lx)
+    call write_current('gw_eph_I',iter,tot_cur,length,NB,1,Lx)
+    call write_current('gw_eph_EI',iter,tot_ecur,length,NB,1,Lx)
   enddo
+  deallocate(cur,tot_cur,tot_ecur)
+  deallocate(Ispec,Itot)
 end subroutine green_solve_gw_ephoton_1D
 
+! driver for solving the e-photon SCBA
 subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,&
   Pmn,polarization,intensity,hw,&
@@ -149,6 +164,7 @@ real(8)::Nphot,mu(2)
   deallocate(cur,tot_cur,tot_ecur)
   deallocate(Ispec,Itot)
 end subroutine green_solve_ephoton_freespace_1D
+
 ! calculate e-photon self-energies in the monochromatic assumption
 subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
 implicit none
@@ -190,6 +206,7 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   !$omp end parallel
   Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
 end subroutine calc_sigma_ephoton_monochromatic
+
 ! calculate e-photon self-energies in spontaneous emission and ADD onto the Sig_r<>
 subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
 implicit none

@@ -22,7 +22,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
-real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0
+real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale
 real(8) :: intensity,hw
 
 open(unit=10,file='input',status='unknown')
@@ -44,6 +44,9 @@ if (ltrans) then
     read(10,*) length
     read(10,*) emin, emax, nen
     read(10,*) lreadpot
+    if (lreadpot) then
+      read(10,*) potscale
+    endif
     read(10,*) niter
     read(10,*) eps_screen
     read(10,*) r0
@@ -179,7 +182,7 @@ if (ltrans) then
       ! add on potential    
       do j = 1,length
           do ib = 1,nb
-              Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:)+pot(j)
+              Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot(j)*potscale
           end do
       end do      
       do ib = 1,nb*NS
@@ -271,7 +274,7 @@ if (ltrans) then
       ! add on potential    
       do j = 1,length
           do ib = 1,nb
-              Ham((j-1)*nb+ib,(j-1)*nb+ib,1)=Ham((j-1)*nb+ib,(j-1)*nb+ib,1)+pot(j)
+              Ham((j-1)*nb+ib,(j-1)*nb+ib,1)=Ham((j-1)*nb+ib,(j-1)*nb+ib,1) + pot(j)*potscale
           end do
       end do      
       do ib = 1,nb*NS
