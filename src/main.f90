@@ -1,12 +1,14 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks
 use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D
+use green_rgf, only : green_rgf_solve_gw_1d
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
 complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:)
+complex(8), allocatable,dimension(:,:,:) :: Hii,H1i,Vii,V1i
 complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: G_retarded,G_lesser,G_greater
 complex(8), allocatable,dimension(:,:,:,:) :: P_retarded,P_lesser,P_greater
@@ -72,8 +74,8 @@ close(10)
 call omp_set_num_threads(ncpu)
 
 if (ltrans) then    
-    
-    if (lkz) then
+  if (length<50) then    
+    if (lkz) then ! 2d case
     print *, 'Build the full device H'
       print *, 'length=',length
       allocate(Ham(nb*length,nb*length,nkz))
@@ -198,7 +200,7 @@ if (ltrans) then
         Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
     else ! 1d case
       print *, 'Build the full device H'
-      print *, 'length=',length
+      print *, 'length=',length*NS
       allocate(Ham(nb*length,nb*length,1))
       allocate(   V(nb*length,nb*length,1))      
       allocate(pot(length))
@@ -358,7 +360,53 @@ if (ltrans) then
     deallocate(en)    
     deallocate(V)
     deallocate(Pmn)
-        
+  else
+    ! Long device, use RGF
+    print *, '~~~~~~~~~~~~ RGF ~~~~~~~~~~~~'
+    
+    print *, 'Build the full device H'
+    print *, 'length=',length*NS
+    nm=NB*NS
+    allocate(Hii(nm,nm,length))
+    allocate(H1i(nm,nm,length))
+    allocate(Vii(nm,nm,length))
+    allocate(V1i(nm,nm,length))    
+    allocate(pot(length))    
+    ! contact Ham blocks
+    call w90_MAT_DEF(Hii(:,:,1),H1i(:,:,1),0.0d0, kt_CBM,NS)
+    !
+    do i=2,length
+      Hii(:,:,i)=Hii(:,:,1)
+      H1i(:,:,i)=H1i(:,:,1)
+    enddo
+    pot(:) = 0.0d0
+    if (lreadpot) then
+        open(unit=10,file='pot_dat',status='unknown')
+        do i = 1,length
+            read(10,*) pot(i)
+        end do
+        close(10)
+    end if         
+    allocate(en(nen))
+    en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
+    ! add on potential    
+    do j = 1,length
+        do ib = 1,nb
+            Hii(ib,ib,j)=Hii(ib,ib,j) + pot(j)*potscale
+        end do
+    end do      
+    ! coulomb operator blocks
+    call w90_bare_coulomb_blocks(Vii(:,:,1),V1i(:,:,1),0.0, 0.0,eps_screen,r0,ns)
+    !
+    do i=2,length
+      Vii(:,:,i)=Vii(:,:,1)
+      V1i(:,:,i)=V1i(:,:,1)
+    enddo
+    call green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,length,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i)
+    deallocate(Hii,H1i,Vii,V1i)
+    deallocate(pot)
+    deallocate(en)
+  endif        
 end if
 
 call w90_free_memory

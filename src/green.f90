@@ -157,7 +157,7 @@ real(8)::Nphot,mu(2)
 !    call write_spectrum('SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
 !    call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
     ! calculate collision integral
-    call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
+    call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
     call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
   enddo
   deallocate(M,siglead)
@@ -321,7 +321,7 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
-!  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
@@ -343,7 +343,7 @@ do iter=0,niter
       call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop,iqz),nm_dev,czero,W_greater(:,:,nop,iqz),nm_dev)   
     enddo
   enddo
-!  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
@@ -407,8 +407,8 @@ do iter=0,niter
     enddo
   enddo
   call write_spectrum_summed_over_kz('SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 end do  
 deallocate(siglead,B)
 end subroutine green_solve_gw_2D
@@ -513,7 +513,9 @@ do iter=0,niter
   !
   print *, 'calc W'  
   do nop=-nopmax+nen/2,nopmax+nen/2   
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:,nop),nm_dev,czero,B,nm_dev)   
+    ! B = -V P
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:,nop),nm_dev,czero,B,nm_dev)
+    ! B = I-VP    
     do i=1,nm_dev
       B(i,i) = 1.0d0 + B(i,i)
     enddo  
@@ -583,7 +585,7 @@ do iter=0,niter
   call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
   !!!! calculate collision integral
-  call calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
+  call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
   call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
 enddo                
 deallocate(siglead)

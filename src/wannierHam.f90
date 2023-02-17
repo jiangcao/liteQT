@@ -28,7 +28,7 @@ public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_M
 public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_ribbon_add_peierls, w90_MAT_DEF_full_device, w90_MAT_DEF_dot,w90_dot_add_peierls
-public :: w90_bare_coulomb_full_device
+public :: w90_bare_coulomb_full_device,w90_bare_coulomb_blocks
 public :: w90_momentum_full_device
 
 CONTAINS
@@ -261,7 +261,7 @@ integer :: i,j
     end do   
 END SUBROUTINE w90_MAT_DEF_2D_kv
 
-!!! construct the diagonal and off-diagonal blocks H(I,I), H(I,I+1)
+!!! construct the diagonal and off-diagonal blocks H(I,I), H(I+1,I)
 SUBROUTINE w90_MAT_DEF(Hii,H1i,kx, ky,ns)
 ! ky in [2pi/Ang]
 implicit none
@@ -323,6 +323,38 @@ do i = 1, length
     end do
 end do
 END SUBROUTINE w90_MAT_DEF_full_device
+
+
+!!! construct the diagonal and off-diagonal blocks V(I,I), V(I+1,I)
+SUBROUTINE w90_bare_coulomb_blocks(Hii,H1i,kx, ky,eps,r0,ns)
+! ky in [2pi/Ang]
+implicit none
+integer, intent(in) :: ns
+COMPLEX(8), INTENT(OUT), DIMENSION(NB*ns,NB*ns) :: Hii, H1i
+real(8), intent(in) :: ky,kx
+real(8), intent(in) :: eps ! dielectric constant
+real(8), intent(in) :: r0 ! length [ang] to remove singularity of 1/r
+integer :: i,j,k
+real(8), dimension(3) :: kv, r
+Hii(:,:) = zzero
+H1i(:,:) = zzero
+do i = 1,ns
+    do k = 1,ns    
+        do j = ymin,ymax
+            kv = kx*xhat + ky*yhat
+            r =  (i-k)*alpha + j*beta                    
+            if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
+                Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )           
+            end if                 
+            if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                   
+                H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
+                & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )            
+            end if
+        end do        
+    end do
+end do  
+END SUBROUTINE w90_bare_coulomb_blocks
 
 !!! construct the bare Coulomb Matrix for the full-device
 SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,r0,NS)
