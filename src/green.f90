@@ -476,10 +476,11 @@ do iter=0,niter
   call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+  !call write_matrix_E('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !        
   print *, 'calc P'  
   nopmax=nen/2-10
-  ndiag=NB*NS*2
+  ndiag=NB*length!NS*2
   ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
   ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
   !$omp parallel default(none) private(ndiag,l,h,iop,nop,ie,dE,i,j) shared(nopmax,P_lesser,P_greater,P_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded)
@@ -507,9 +508,12 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
-!  call write_spectrum('PR',iter,P_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('PR',iter,P_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum('PL',iter,P_lesser  ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum('PG',iter,P_greater ,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_matrix_E('P_r',iter,P_retarded,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+  call write_matrix_E('P_l',iter,P_lesser,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+  call write_matrix_E('P_g',iter,P_greater,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !
   print *, 'calc W'  
   do nop=-nopmax+nen/2,nopmax+nen/2   
@@ -528,13 +532,16 @@ do iter=0,niter
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_greater(:,:,nop),nm_dev,czero,B,nm_dev) 
     call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_greater(:,:,nop),nm_dev)   
   enddo
-!  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WR',iter,W_retarded,nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum('WL',iter,W_lesser,  nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum('WG',iter,W_greater, nen,En-en(nen/2),length,NB,Lx,(/1.0,1.0/))
 !  call write_matrix_summed_overE('W_r',iter,W_retarded,nen,en,length,NB,(/1.0,1.0/))
+  call write_matrix_E('W_r',iter,W_retarded,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+  call write_matrix_E('W_g',iter,W_greater,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+  call write_matrix_E('W_l',iter,W_lesser,nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !
   print *, 'calc SigGW'
-  ndiag=NB*NS*2
+  ndiag=NB*length!*NS*2
   nopmax=nen/2-10
   Sig_greater_new = dcmplx(0.0d0,0.0d0)
   Sig_lesser_new = dcmplx(0.0d0,0.0d0)
@@ -567,6 +574,9 @@ do iter=0,niter
   Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
   !!! Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
   !!! Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
+  call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
+  call write_matrix_E('Sigma_l',iter,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
+  call write_matrix_E('Sigma_g',iter,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
   ! mixing with the previous one
   Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
   Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
@@ -966,6 +976,29 @@ close(11)
 end subroutine write_matrix_summed_overE
 
 
+! write a matrix for all energy index into a file
+subroutine write_matrix_E(dataset,i,G,nen,en,length,NB,coeff)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(:,:,:)
+integer, intent(in)::i,nen,length,NB
+real(8), intent(in)::en(nen),coeff(2)
+integer:: ie,j,ib,l
+complex(8)::tr
+open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+do ie=1,nen  
+    do l=1,length*NB
+        do j = 1,length*NB
+            tr = G(l,j,ie)            
+            write(11,'(E18.6,2I8,2E18.6)') en(ie),l,j, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+        end do
+    end do
+    write(11,*)    
+end do
+close(11)
+end subroutine write_matrix_E
+
+
+
 
 ! write spectrum into file (pm3d map)
 subroutine write_spectrum_summed_over_kz(dataset,i,G,nen,en,nkz,length,NB,Lx,coeff)
@@ -1001,7 +1034,7 @@ implicit none
   integer i,j,k,nm,nmax
   COMPLEX(8) :: z
   real(8) :: E,error
-  REAL(8) :: TOL=1.0D-100  ! [eV]
+  REAL(8) :: TOL=1.0D-20  ! [eV]
   COMPLEX(8), INTENT(IN) ::  S00(nm,nm), H00(nm,nm), H10(nm,nm)
   COMPLEX(8), INTENT(OUT) :: G00(nm,nm), GBB(nm,nm)
   COMPLEX(8), ALLOCATABLE :: A(:,:), B(:,:), C(:,:), tmp(:,:)

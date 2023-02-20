@@ -34,7 +34,7 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,Lx,nen,en,temp,mu,H
   complex(8),allocatable,dimension(:,:,:,:)::W_lesser,W_greater,W_retarded
   complex(8),allocatable,dimension(:,:,:)::Sii
   real(8)::tr(nen),tre(nen)
-  integer::ie,iter,i,ix,nopmax,nop,iop,l,h
+  integer::ie,iter,i,ix,nopmax,nop,iop,l,h,io
   complex(8)::dE
   !
   print *,'====== green_rgf_solve_gw_1D ======'
@@ -86,24 +86,24 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,Lx,nen,en,temp,mu,H
     P_retarded_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)  
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
-    !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i) shared(nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx)
-    !$omp do
-    do ix=1,nx
+    !$omp parallel default(none) private(io,ix,l,h,iop,nop,ie,i) shared(nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx)
+    l=1
+    h=nm
+    !$omp do 
+    do io=1,nx*nm
+      ix=(io-1)/nm+1
+      i=io-(ix-1)*nm
       do nop=-nopmax,nopmax
         iop=nop+nen/2  
         do ie = max(nop+1,1),min(nen,nen+nop)           
-          do i = 1, nm        
-              l=1
-              h=nm
-              P_lesser(i,l:h,ix,iop) = P_lesser(i,l:h,ix,iop) + G_lesser(i,l:h,ix,ie) * G_greater(l:h,i,ix,ie-nop)
-              P_greater(i,l:h,ix,iop) = P_greater(i,l:h,ix,iop) + G_greater(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop)        
-              P_retarded(i,l:h,ix,iop) = P_retarded(i,l:h,ix,iop) + (G_lesser(i,l:h,ix,ie) * conjg(G_r(i,l:h,ix,ie-nop)) & 
-                                       & + G_r(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop))        
-          enddo
+            P_lesser(i,l:h,ix,iop) = P_lesser(i,l:h,ix,iop) + G_lesser(i,l:h,ix,ie) * G_greater(l:h,i,ix,ie-nop)
+            P_greater(i,l:h,ix,iop) = P_greater(i,l:h,ix,iop) + G_greater(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop)        
+            P_retarded(i,l:h,ix,iop) = P_retarded(i,l:h,ix,iop) + (G_lesser(i,l:h,ix,ie) * conjg(G_r(i,l:h,ix,ie-nop)) & 
+                                     & + G_r(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop))        
         enddo
       enddo
     enddo
-    !$omp end do
+    !$omp end do 
     !$omp end parallel
     P_lesser=P_lesser*dE
     P_greater=P_greater*dE
@@ -117,8 +117,8 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,Lx,nen,en,temp,mu,H
       call green_rgf_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
     enddo
     call write_spectrum('gw_WR',iter,W_retarded,nen,En-en(nen/2),nx,NB,NS,Lx,(/1.0,1.0/))
-    !  call write_spectrum('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nx,NB,NS,Lx,(/1.0,1.0/))
-    !  call write_spectrum('gw_WG',iter,W_greater ,nen,En-en(nen/2),nx,NB,NS,Lx,(/1.0,1.0/))
+    call write_spectrum('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nx,NB,NS,Lx,(/1.0,1.0/))
+    call write_spectrum('gw_WG',iter,W_greater ,nen,En-en(nen/2),nx,NB,NS,Lx,(/1.0,1.0/))
     !
     print *, 'calc SigGW'
     nopmax=nen/2-10
@@ -127,26 +127,26 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,Lx,nen,en,temp,mu,H
     Sigma_r_new = dcmplx(0.0d0,0.0d0)
     dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)    
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
-    !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i) shared(nopmax,w_lesser,w_greater,w_retarded,sigma_lesser_new,sigma_greater_new,sigma_r_new,nen,En,nm,G_lesser,G_greater,G_r,nx)
+    !$omp parallel default(none) private(io,ix,l,h,iop,nop,ie,i) shared(nopmax,w_lesser,w_greater,w_retarded,sigma_lesser_new,sigma_greater_new,sigma_r_new,nen,En,nm,G_lesser,G_greater,G_r,nx)
+    l=1
+    h=nm
     !$omp do
     do ix=1,nx
+    do i=1,nm
       do ie=1,nen      
         do nop= -nopmax,nopmax    
           if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then  
             iop=nop+nen/2                
-            do i = 1, nm        
-              l=1
-              h=nm
-              Sigma_lesser_new(i,l:h,ix,ie)=Sigma_lesser_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_lesser(i,l:h,ix,iop)
-              Sigma_greater_new(i,l:h,ix,ie)=Sigma_greater_new(i,l:h,ix,ie)+G_greater(i,l:h,ix,ie-nop)*W_greater(i,l:h,ix,iop)
-              Sigma_r_new(i,l:h,ix,ie)=Sigma_r_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_retarded(i,l:h,ix,iop) &
-                                                            &  +G_r(i,l:h,ix,ie-nop)*W_lesser(i,l:h,ix,iop) &
-                                                            &  +G_r(i,l:h,ix,ie-nop)*W_retarded(i,l:h,ix,iop)    
-            enddo
+            Sigma_lesser_new(i,l:h,ix,ie)=Sigma_lesser_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_lesser(i,l:h,ix,iop)
+            Sigma_greater_new(i,l:h,ix,ie)=Sigma_greater_new(i,l:h,ix,ie)+G_greater(i,l:h,ix,ie-nop)*W_greater(i,l:h,ix,iop)
+            Sigma_r_new(i,l:h,ix,ie)=Sigma_r_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_retarded(i,l:h,ix,iop) &
+                                                          &  +G_r(i,l:h,ix,ie-nop)*W_lesser(i,l:h,ix,iop) &
+                                                          &  +G_r(i,l:h,ix,ie-nop)*W_retarded(i,l:h,ix,iop)    
           endif
         enddo
       enddo
     enddo    
+    enddo
     !$omp end do
     !$omp end parallel
     Sigma_lesser_new = Sigma_lesser_new  * dE
@@ -229,7 +229,7 @@ subroutine green_rgf_w(nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,p_lesser_1i,p
     call prepare_rgf_W(nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,p_lesser_1i,p_greater_1i,p_retarded_1i,Hii,H1i,Hi1,sigma_lesser,sigma_greater)
     ! start RGF
     z=dcmplx(1.0d0, 1.0d-3)
-    ! self energy on the left contact        
+    ! on the left contact        
     H00(:,:)=Hii(:,:,1)
     H10(:,:)=H1i(:,:,1)
     sigmal=0.0d0
@@ -244,18 +244,18 @@ subroutine green_rgf_w(nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,p_lesser_1i,p
     call zgemm('n','n',nm,nm,nm,alpha,A,nm,sig,nm,beta,B,nm) 
     call zgemm('n','c',nm,nm,nm,alpha,B,nm,A,nm,beta,C,nm) 
     Gln(:,:,1)=C(:,:)
-    Do l=2,nx-1                
+    Do l=1,nx-1                
         H00(:,:)=Hii(:,:,l)
         H10(:,:)=H1i(:,:,l)
         H01(:,:)=Hi1(:,:,l)
-        call zgemm('n','n',nm,nm,nm,alpha,H10,nm,Gl(:,:,l-1),nm,beta,B,nm) 
+        call zgemm('n','n',nm,nm,nm,alpha,H10,nm,Gl(:,:,max(l-1,1)),nm,beta,B,nm) 
         call zgemm('n','n',nm,nm,nm,alpha,B,nm,H01,nm,beta,C,nm)
         A=z*S00-H00-C   
         !
         call invert(A,nm)
         Gl(:,:,l)=A(:,:)
         !
-        sig=Gln(:,:,l-1)
+        sig=Gln(:,:,max(l-1,1))
         call zgemm('n','n',nm,nm,nm,alpha,H10,nm,sig,nm,beta,B,nm) 
         call zgemm('n','n',nm,nm,nm,alpha,B,nm,H01,nm,beta,C,nm)     
         call zgemm('n','n',nm,nm,nm,alpha,sigma_lesser(:,:,l),nm,S00,nm,beta,B,nm)

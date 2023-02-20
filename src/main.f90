@@ -17,7 +17,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -55,6 +55,7 @@ if (ltrans) then
     read(10,*) mus,mud
     read(10,*) temps, tempd
     read(10,*) alpha_mix
+    read(10,*) lrgf
     read(10,*) lkz
     if (lkz) then
       read(10,*) nkz
@@ -74,7 +75,7 @@ close(10)
 call omp_set_num_threads(ncpu)
 
 if (ltrans) then    
-  if (length<50) then    
+  if (.not.lrgf) then    
     if (lkz) then ! 2d case
     print *, 'Build the full device H'
       print *, 'length=',length
@@ -200,7 +201,7 @@ if (ltrans) then
         Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
     else ! 1d case
       print *, 'Build the full device H'
-      print *, 'length=',length*NS
+      print *, 'length=',length
       allocate(Ham(nb*length,nb*length,1))
       allocate(   V(nb*length,nb*length,1))      
       allocate(pot(length))
@@ -359,7 +360,7 @@ if (ltrans) then
     deallocate(Sig_greater_new)
     deallocate(en)    
     deallocate(V)
-    deallocate(Pmn)
+    if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF
     print *, '~~~~~~~~~~~~ RGF ~~~~~~~~~~~~'
