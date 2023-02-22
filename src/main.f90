@@ -17,7 +17,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -55,6 +55,7 @@ if (ltrans) then
     read(10,*) mus,mud
     read(10,*) temps, tempd
     read(10,*) alpha_mix
+    read(10,*) ldiag
     read(10,*) lrgf
     read(10,*) lkz
     if (lkz) then
@@ -333,7 +334,7 @@ if (ltrans) then
             alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
             G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
             W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
       endif
     endif 
     
