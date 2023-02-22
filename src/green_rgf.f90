@@ -683,6 +683,40 @@ subroutine green_RGF_CMS(TEMP,nm,nx,E,mu,Sii,Hii,H1i,sigma_lesser_ph,sigma_great
     deallocate(Glp)
 end subroutine green_RGF_CMS
 
+! find the inverse of a band matrix A by solving a system of linear equations
+! on exit, A contains the band matrix of inv(A)
+subroutine invert_band(A,nn,nb)
+implicit none
+integer,intent(in)::nn,nb
+complex(8),intent(inout)::A(3*nb+1,nn)
+complex(8),allocatable::work(:),B(:,:),X(:,:)
+integer,allocatable::ipiv(:)
+integer::info,lda,lwork,ldb,i
+allocate(ipiv(nn))
+allocate(work(nn*nn))
+lda=3*nb+1
+call zgbtrf(nn,nn,nb,nb,A,lda,ipiv,info)
+if (info.ne.0) then
+  print*,'SEVERE warning: zgbtrf failed, info=',info
+  call abort
+endif
+ldb=1
+allocate(B(ldb,nn))
+allocate(X(lda,nn))
+do i=1,nn
+  B=0.0d0
+  B(1,i)=1.0d0
+  call zgbtrs('N',nn,nb,nb,nrhs,A,lda,ipiv,B,ldb,info)	
+  if (info.ne.0) then
+    print*,'SEVERE warning: zgbtrs failed, info=',info
+    call abort
+  endif
+  X(1:nb*2+1,i)=B(1,i-nb:i+nb)
+enddo
+A=X
+deallocate(B,work,ipiv,X)
+end subroutine invert_band
+
 
 subroutine invert(A,nn)
     implicit none      
@@ -693,7 +727,15 @@ subroutine invert(A,nn)
     allocate(work(nn*nn))
     allocate(ipiv(nn))
     call zgetrf(nn,nn,A,nn,ipiv,info)
+    if (info.ne.0) then
+      print*,'SEVERE warning: zgetrf failed, info=',info
+      call abort
+    endif
     call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+    if (info.ne.0) then
+      print*,'SEVERE warning: zgetri failed, info=',info
+      call abort
+    endif
     deallocate(work)
     deallocate(ipiv)
 end subroutine invert

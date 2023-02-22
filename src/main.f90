@@ -1,5 +1,5 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks,w90_inverse_bare_coulomb_full_device
 use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D
 use green_rgf, only : green_rgf_solve_gw_1d
 implicit none
@@ -9,7 +9,7 @@ real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
 complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:)
 complex(8), allocatable,dimension(:,:,:) :: Hii,H1i,Vii,V1i
-complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:)
+complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:),invV(:,:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: G_retarded,G_lesser,G_greater
 complex(8), allocatable,dimension(:,:,:,:) :: P_retarded,P_lesser,P_greater
 complex(8), allocatable,dimension(:,:,:,:) :: W_retarded,W_lesser,W_greater
@@ -265,6 +265,17 @@ if (ltrans) then
           write(11,*)
       end do
       close(11)
+      ! inverse Coulomb operator
+      allocate(invV(nb*length,nb*length,1))
+      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1,NS)
+      open(unit=11,file='invV.dat',status='unknown')
+      do i=1, size(invV,1)
+          do j=1, size(invV,2)
+              write(11,'(2I6,2E15.4)') i,j, dble(invV(i,j,1)), aimag(invV(i,j,1))
+          end do
+          write(11,*)
+      end do
+      close(11)
       !
       open(unit=11,file='Ham.dat',status='unknown')
       do i=1, size(Ham,1)
@@ -314,7 +325,7 @@ if (ltrans) then
       
         if (.not. lnogw) then
           call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-              alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+              alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),invV(:,:,1),&
               Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
               W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
@@ -331,7 +342,7 @@ if (ltrans) then
          
       else
           call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),invV(:,:,1),&
             G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
             W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
             Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
@@ -361,6 +372,7 @@ if (ltrans) then
     deallocate(Sig_greater_new)
     deallocate(en)    
     deallocate(V)
+    deallocate(invV)
     if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF

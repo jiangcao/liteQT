@@ -25,7 +25,7 @@ CONTAINS
 
 ! driver for solving the GW and e-photon SCBA together   
 subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,invV&
   Pmn,polarization,intensity,hw,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
@@ -34,7 +34,7 @@ implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
-complex(8), intent(in):: V(nm_dev,nm_dev)
+complex(8), intent(in):: V(nm_dev,nm_dev), invV(nm_dev,nm_dev)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 real(8), intent(in) :: polarization(3) ! light polarization vector 
 real(8), intent(in) :: intensity ! [W/m^2]
@@ -54,7 +54,7 @@ integer::iter
   allocate(Itot(nm_dev,nm_dev))
   do iter=0,niter
     call green_solve_gw_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-            alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
+            alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),invV(:,:),&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),P_retarded(:,:,:),P_lesser(:,:,:),P_greater(:,:,:),&
             W_retarded(:,:,:),W_lesser(:,:,:),W_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),.false.)
@@ -417,7 +417,7 @@ end subroutine green_solve_gw_2D
 
 ! driver for iterating G -> P -> W -> Sig 
 subroutine green_solve_gw_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,invV,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
@@ -425,7 +425,7 @@ implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
-complex(8), intent(in):: V(nm_dev,nm_dev)
+complex(8), intent(in):: V(nm_dev,nm_dev), invV(nm_dev,nm_dev)
 logical,intent(in)::ldiag
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 !----
@@ -525,15 +525,17 @@ do iter=0,niter
   !
   print *, 'calc W'  
   do nop=-nopmax+nen/2,nopmax+nen/2   
-    ! B = -V P
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:,nop),nm_dev,czero,B,nm_dev)
-    ! B = I-VP    
-    do i=1,nm_dev
-      B(i,i) = 1.0d0 + B(i,i)
-    enddo  
-    ! calculate W^r = (I - V P^r)^-1 V
+    !! B = -V P
+    !call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:,nop),nm_dev,czero,B,nm_dev)
+    !! B = I-VP    
+    !do i=1,nm_dev
+    !  B(i,i) = 1.0d0 + B(i,i)
+    !enddo  
+    B = invV - P_retarded(:,:,nop)
+    ! calculate W^r = (I - V P^r)^-1 V = (V^-1 - P)^-1
     call invert(B,nm_dev)
-    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,W_retarded(:,:,nop),nm_dev)     
+    !call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,W_retarded(:,:,nop),nm_dev)     
+    W_retarded(:,:,nop)=B
     ! calculate W^< and W^> = W^r P^<> W^r dagger
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_lesser(:,:,nop),nm_dev,czero,B,nm_dev) 
     call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_lesser(:,:,nop),nm_dev) 
