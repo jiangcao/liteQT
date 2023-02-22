@@ -490,7 +490,7 @@ do ikx=1,nkx
             if (nky == 1) then
               r = dble(i-nkx/2)*alpha
             endif
-            phi = exp( dcmplx( 0.0d0, - dot_product(r,kv) ) )                    
+            phi = exp( dcmplx( 0.0d0, dot_product(r,kv) ) )                    
             invVk(:,:,ikx,iky) = invVk(:,:,ikx,iky) + bare_coulomb(i,j,eps,r0) * phi / dble(nkx*nky)                                  
         end do        
     end do   
@@ -517,7 +517,7 @@ do i = 1,nkx
           ky = 0.0d0
         endif
         kv = kx*xhat + ky*yhat
-        phi = exp( dcmplx( 0.0d0, dot_product(r,kv) ) )                   
+        phi = exp( dcmplx( 0.0d0, - dot_product(r,kv) ) )                   
         invV(:,:,i,j) = invV(:,:,i,j) + invVk(:,:,ikx,iky) * phi / dble(nkx*nky)
       end do        
     end do       
