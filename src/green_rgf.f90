@@ -691,7 +691,7 @@ integer,intent(in)::nn,nb
 complex(8),intent(inout)::A(3*nb+1,nn)
 complex(8),allocatable::work(:),B(:,:),X(:,:)
 integer,allocatable::ipiv(:)
-integer::info,lda,lwork,ldb,i
+integer::info,lda,lwork,ldb,i,nrhs
 allocate(ipiv(nn))
 allocate(work(nn*nn))
 lda=3*nb+1
@@ -703,10 +703,11 @@ endif
 ldb=1
 allocate(B(ldb,nn))
 allocate(X(lda,nn))
+nrhs=ldb
 do i=1,nn
   B=0.0d0
   B(1,i)=1.0d0
-  call zgbtrs('N',nn,nb,nb,nrhs,A,lda,ipiv,B,ldb,info)	
+  call zgbtrs('N',nn,nb,nb,nrhs,A,lda,ipiv,B,ldb,info)
   if (info.ne.0) then
     print*,'SEVERE warning: zgbtrs failed, info=',info
     call abort

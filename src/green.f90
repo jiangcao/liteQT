@@ -25,7 +25,7 @@ CONTAINS
 
 ! driver for solving the GW and e-photon SCBA together   
 subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,invV&
+  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,invV,&
   Pmn,polarization,intensity,hw,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&

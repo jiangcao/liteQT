@@ -473,7 +473,7 @@ else
   dky = 1.0d0 / dble(nky-1) * 2 * pi / Ly
 endif
 ! invert coulomb in k space
-!$omp parallel default(none) private(ikx,iky,kx,ky,i,j,r,phi,kv) shared(nkx,nky,dkx,dky,alpha,beta,invVk,eps,NB,Lx,Ly,xhat,yhat)
+!$omp parallel default(none) private(ikx,iky,kx,ky,i,j,r,phi,kv) shared(nkx,nky,dkx,dky,alpha,beta,invVk,eps,NB,Lx,Ly,xhat,yhat,r0)
 !$omp do
 do ikx=1,nkx
   do iky=1,nky

@@ -267,7 +267,7 @@ if (ltrans) then
       close(11)
       ! inverse Coulomb operator
       allocate(invV(nb*length,nb*length,1))
-      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1,NS)
+      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1)
       open(unit=11,file='invV.dat',status='unknown')
       do i=1, size(invV,1)
           do j=1, size(invV,2)
