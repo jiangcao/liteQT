@@ -408,11 +408,6 @@ do i=1,NB
         else
           bare_coulomb(i,j) = 0.0d0 ! (e)/(4.0d0*pi*epsilon0*eps*1.0d-10) * (1.0d0/r0) ! self-interaction 
         endif
-!!        if (norm(r) .lt. r0) then
-!!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*(norm(r)+r0)*1.0d-10)*2.0d0
-!!        else
-!!            bare_coulomb(i,j) = (e)/(4.0d0*pi*epsilon0*eps*norm(r)*1.0d-10);  ! in eV
-!!        end if
     end do
 end do 
 END FUNCTION bare_coulomb
@@ -499,7 +494,7 @@ do ikx=1,nkx
 enddo
 !$omp end do
 !$omp end parallel
-! invert coulomb in real space
+! transform invert coulomb into real space
 !$omp parallel default(none) private(i,j,r,ikx,iky,kx,ky,phi,kv) shared(nkx,nky,alpha,beta,dkx,dky,invV,invVk,Lx,Ly,xhat,yhat)
 !$omp do
 do i = 1,nkx           

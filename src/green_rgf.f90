@@ -685,7 +685,7 @@ end subroutine green_RGF_CMS
 
 ! find the inverse of a band matrix A by solving a system of linear equations
 ! on exit, A contains the band matrix of inv(A)
-subroutine invert_band(A,nn,nb)
+subroutine invert_banded(A,nn,nb)
 implicit none
 integer,intent(in)::nn,nb
 complex(8),intent(inout)::A(3*nb+1,nn)
@@ -716,7 +716,7 @@ do i=1,nn
 enddo
 A=X
 deallocate(B,work,ipiv,X)
-end subroutine invert_band
+end subroutine invert_banded
 
 
 subroutine invert(A,nn)

@@ -7,7 +7,7 @@ real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
-complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:)
+complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:),tmpV(:,:)
 complex(8), allocatable,dimension(:,:,:) :: Hii,H1i,Vii,V1i
 complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:),invV(:,:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: G_retarded,G_lesser,G_greater
@@ -266,8 +266,12 @@ if (ltrans) then
       end do
       close(11)
       ! inverse Coulomb operator
+      allocate(tmpV(3*nb*length,3*nb*length))
+      call w90_bare_coulomb_full_device(tmpV(:,:),0.0d0,length*3,eps_screen,r0)      
       allocate(invV(nb*length,nb*length,1))
-      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1)
+!      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1)
+      call invert(tmpV,3*nb*length)
+      invV(:,:,1)=tmpV(nb*length+1:2*nb*length,nb*length+1:2*nb*length)
       open(unit=11,file='invV.dat',status='unknown')
       do i=1, size(invV,1)
           do j=1, size(invV,2)
@@ -373,6 +377,7 @@ if (ltrans) then
     deallocate(en)    
     deallocate(V)
     deallocate(invV)
+    deallocate(tmpV)
     if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF
