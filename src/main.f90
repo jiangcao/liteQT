@@ -231,13 +231,13 @@ if (ltrans) then
       allocate(G_lesser(nb*length,nb*length,nen,1))
       allocate(G_greater(nb*length,nb*length,nen,1))
       
-      allocate(P_retarded(nb*length,nb*length,nen,1))
-      allocate(P_lesser(nb*length,nb*length,nen,1))
-      allocate(P_greater(nb*length,nb*length,nen,1))
+      allocate(P_retarded(nb*length,nb*length,nen*2+1,1))
+      allocate(P_lesser(nb*length,nb*length,nen*2+1,1))
+      allocate(P_greater(nb*length,nb*length,nen*2+1,1))
       
-      allocate(W_retarded(nb*length,nb*length,nen,1))
-      allocate(W_lesser(nb*length,nb*length,nen,1))
-      allocate(W_greater(nb*length,nb*length,nen,1))
+      allocate(W_retarded(nb*length,nb*length,nen*2+1,1))
+      allocate(W_lesser(nb*length,nb*length,nen*2+1,1))
+      allocate(W_greater(nb*length,nb*length,nen*2+1,1))
       
       allocate(Sig_retarded(nb*length,nb*length,nen,1))
       allocate(Sig_lesser(nb*length,nb*length,nen,1))
@@ -255,8 +255,10 @@ if (ltrans) then
       
       ! device Ham matrix
       call w90_MAT_DEF_full_device(Ham(:,:,1),kt_CBM,length,NS)      
+      !
       ! Coulomb operator
-      call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0)      
+      call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='fromfile')      
+      !
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
           do j=1, size(V,2)

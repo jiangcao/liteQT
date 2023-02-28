@@ -9,6 +9,7 @@ private
 COMPLEX(8), ALLOCATABLE :: Hr(:,:,:,:)
 COMPLEX(8), ALLOCATABLE :: rmn(:,:,:,:,:) ! position operator
 COMPLEX(8), ALLOCATABLE :: pmn(:,:,:,:,:) ! momentum operator
+COMPLEX(8), ALLOCATABLE :: Vmn(:,:,:,:) ! Coulomb operator
 real(8), allocatable :: wannier_center(:,:)
 REAL(8), DIMENSION(3) :: alpha,beta,gamm,xhat,yhat,b1,b2
 REAL(8) :: Lx, Ly,cell(3,3) ! in Ang
@@ -38,6 +39,7 @@ SUBROUTINE w90_free_memory()
     deallocate(Hr)
     if (allocated(rmn)) deallocate(rmn)
     if (allocated(pmn)) deallocate(pmn)
+    if (allocated(Vmn)) deallocate(Vmn)
     deallocate(wannier_center)
 END SUBROUTINE w90_free_memory
 
@@ -326,6 +328,7 @@ end do
 END SUBROUTINE w90_MAT_DEF_full_device
 
 
+
 !!! construct the diagonal and off-diagonal blocks V(I,I), V(I+1,I)
 SUBROUTINE w90_bare_coulomb_blocks(Hii,H1i,kx, ky,eps,r0,ns)
 ! ky in [2pi/Ang]
@@ -358,33 +361,64 @@ end do
 END SUBROUTINE w90_bare_coulomb_blocks
 
 !!! construct the bare Coulomb Matrix for the full-device
-SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,r0,NS)
+SUBROUTINE w90_bare_coulomb_full_device(V,ky,length,eps,r0,NS,method)
 implicit none
 integer, intent(in) :: length
 integer, intent(in), optional :: NS
-real(8), intent(in) :: ky, eps ! dielectric constant
+real(8), intent(in) :: ky, eps ! dielectric constant / to reduce V
 real(8), intent(in) :: r0 ! length [ang] to remove singularity of 1/r
+character(len=*),intent(in),optional :: method
+character(len=20) :: cmethod
 complex(8), intent(out), dimension(NB*length,NB*length) :: V
 integer :: i,j, k
 real(8), dimension(3) :: kv, r
 V = dcmplx(0.0d0,0.0d0)
-do i = 1, length
-    do k = 1, length
-        do j = ymin,ymax
-            kv = ky*yhat
-            r =  dble(i-k)*alpha + dble(j)*beta                    
-            if (present(NS)) then
-                if ((i-k <= NS ) .and. (i-k >= -NS )) then                
+if (present(method)) then
+    cmethod=method
+else
+    cmethod='pointlike'
+endif
+select case(trim(method))
+  case('pointlike')
+    do i = 1, length
+        do k = 1, length
+            do j = ymin,ymax
+                kv = ky*yhat
+                r =  dble(i-k)*alpha + dble(j)*beta                    
+                if (present(NS)) then
+                    if ((i-k <= NS ) .and. (i-k >= -NS )) then                
+                        V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                        & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )           
+                    end if                 
+                else
                     V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                    & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )           
-                end if                 
-            else
-                V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )                           
-            end if
+                    & bare_coulomb(i-k,j,eps,r0) * exp(-z1j* dot_product(r,kv) )                           
+                end if
+            end do
         end do
     end do
-end do
+  case('fromfile')
+    call w90_load_coulomb_blocks
+    do i = 1, length
+        do k = 1, length
+            do j = ymin,ymax
+                kv = ky*yhat
+                r =  dble(i-k)*alpha + dble(j)*beta                    
+                if (present(NS)) then
+                    if ((i-k <= NS ) .and. (i-k >= -NS )) then                
+                        V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                        & Vmn(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) ) / eps          
+                    end if                 
+                else
+                    if ((i-k <= xmax ) .and. (i-k >= xmin )) then  
+                        V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                        & Vmn(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) ) / eps                           
+                    endif
+                end if
+            end do
+        end do
+    end do
+end select
 END SUBROUTINE w90_bare_coulomb_full_device
 ! function to calculate the bare coulomb potential for wannier orbitals between the (0,0) and (a1,a2) cells
 FUNCTION bare_coulomb(a1,a2,eps,r0)
@@ -900,5 +934,46 @@ subroutine invert(A,nn)
   deallocate(work)
   deallocate(ipiv)
 end subroutine invert
+
+subroutine w90_load_coulomb_blocks()
+implicit none
+integer::i
+real(8)::reV(NB)
+real(8),parameter::ry2ev=13.6d0
+allocate(Vmn(NB,NB,nx,ny))
+Vmn=dcmplx(0.0d0,0.0d0)
+
+open(unit=10,file='V_CNT_0_0_dat',status='unknown')
+do i=1,NB
+    read(10,*) reV(1:NB)
+    Vmn(:,i,-xmin+1,1)=dcmplx(reV,0.0d0)*ry2ev
+enddo
+close(10)
+
+open(unit=10,file='V_CNT_0_1_dat',status='unknown')
+do i=1,NB
+    read(10,*) reV(1:NB)
+    Vmn(:,i,-xmin+2,1)=dcmplx(reV,0.0d0)*ry2ev    
+enddo
+close(10)
+
+open(unit=10,file='V_CNT_0_2_dat',status='unknown')
+do i=1,NB
+    read(10,*) reV(1:NB)
+    Vmn(:,i,-xmin+3,1)=dcmplx(reV,0.0d0)*ry2ev    
+enddo
+close(10)
+
+open(unit=10,file='V_CNT_0_3_dat',status='unknown')
+do i=1,NB
+    read(10,*) reV(1:NB)
+    Vmn(:,i,-xmin+4,1)=dcmplx(reV,0.0d0)*ry2ev    
+enddo
+close(10)
+
+do i=1,3
+    Vmn(:,:,-xmin+1-i,1) = transpose(conjg(Vmn(:,:,-xmin+1+i,1)))
+enddo
+end subroutine w90_load_coulomb_blocks
 
 END MODULE wannierHam
