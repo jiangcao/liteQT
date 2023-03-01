@@ -501,18 +501,17 @@ do iter=0,niter
   !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_g',iter,G_greater,nen,en,length,NB,(/1.0,1.0/))
   !        
-!if (iter==0) then
   print *, 'calc P'  
   ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
   ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
   P_lesser=czero
   P_greater=czero
   P_retarded=czero
-  ndiag=NB*(min(NS*2,iter/2))
+  ndiag=NB*(min(NS*8,iter/2))
   if (ldiag) ndiag=0  
   nopmax=nen/2-1
-  dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	* spindeg
-  print *,'ndiag=',ndiag
+  dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	!* spindeg
+  print *,'ndiag=',min(ndiag,nm_dev)
   !$omp parallel default(none) private(l,h,i,j) shared(ndiag,nopmax,P_lesser,P_greater,P_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded)  
   !$omp do
   do i=1,nm_dev
@@ -567,15 +566,14 @@ do iter=0,niter
   !call write_matrix_E('W_g',iter,W_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !call write_matrix_E('W_l',iter,W_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !
-!endif  
   print *, 'calc SigGW'
   Sig_greater_new = dcmplx(0.0d0,0.0d0)
   Sig_lesser_new = dcmplx(0.0d0,0.0d0)
   Sig_retarded_new = dcmplx(0.0d0,0.0d0)
   dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)      
-  ndiag=NB*NS*2  
+  ndiag=NB*NS*8  
   if (ldiag) ndiag=0  
-  print *,'ndiag=',ndiag
+  print *,'ndiag=',min(ndiag,nm_dev)
   ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
   !$omp parallel default(none) private(l,h,i,j) shared(ndiag,nen,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
   !$omp do
@@ -583,8 +581,8 @@ do iter=0,niter
     l=max(i-ndiag,1)
     h=min(nm_dev,i+ndiag)
     do j=l,h
-      Sig_lesser_new(i,j,:)=conv1d(nen,G_lesser(i,j,:),W_lesser(i,j,:),method='simple')
-      Sig_greater_new(i,j,:)=conv1d(nen,G_greater(i,j,:),W_greater(i,j,:),method='simple')
+      Sig_lesser_new(i,j,:)  =conv1d(nen,G_lesser(i,j,:),W_lesser(i,j,:),method='simple')
+      Sig_greater_new(i,j,:) =conv1d(nen,G_greater(i,j,:),W_greater(i,j,:),method='simple')
       Sig_retarded_new(i,j,:)=conv1d(nen,G_lesser(i,j,:),W_retarded(i,j,:),method='simple') +&
                               conv1d(nen,G_retarded(i,j,:),W_lesser(i,j,:),method='simple') +&
                               conv1d(nen,G_retarded(i,j,:),W_retarded(i,j,:),method='simple')
@@ -1284,13 +1282,20 @@ integer, intent(in)::n
 character(len=*),intent(in)::method
 complex(8),intent(in)::X(n),Y(n)
 complex(8)::Z(2*n-1)
-integer::i
+integer::i,ie
 select case (trim(method))
+  case('index')
+    Z=czero
+    do i=-n+1,n-1
+      do ie = max(i+1,1),min(n,n+i)
+        Z(i+n)=Z(i+n) + X(ie)*Y(ie-i)
+      enddo
+    enddo
   case('simple')
     do i=-n+1,n-1
-      Z(i+n)=dot_product(X(max(1,1+i):min(n+i,n)),Y(max(1-i,1):min(n,n-i)))
+      Z(i+n)=sum(X(max(1,1+i):min(n+i,n))*Y(max(1-i,1):min(n,n-i)))
     enddo
-  !case('fft')  
+  case('fft')  
   
 end select
 end function corr1d
@@ -1302,15 +1307,51 @@ integer, intent(in)::n
 character(len=*),intent(in)::method
 complex(8),intent(in)::X(n),Y(n*2-1)
 complex(8)::Z(n)
-integer::i
+complex(8),allocatable,dimension(:)::x_in
+integer::i,ie
 select case (trim(method))
+  case('index')
+    Z=czero
+    do ie=1,n
+      do i= -n+1,n-1
+        if ((ie .gt. max(i,1)).and.(ie .lt. min(n,(n+i)))) then
+          Z(ie)=Z(ie) + X(ie-i)*Y(i+n)
+        endif
+      enddo
+    enddo
   case('simple')
     do i=1,n
-      Z(i)=dot_product(X(n:1:-1),Y(i:i+n-1))
+      Z(i)=sum(X(n:1:-1)*Y(i:i+n-1))
     enddo
-  !case('fft')
-  
+  case('fft')
+    allocate(X_in(n*2-1))
+    X_in(1:n)=X
+    X_in(n+1:n*2-1)=czero
+    call do_mkl_dfti_conv(n,X_in,Y,Z)
+    deallocate(X_in)
 end select
 end function conv1d
+
+subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
+! 1D complex to complex
+Use MKL_DFTI
+integer :: n
+real(8) :: a
+Complex(8) :: X_in(n),Y_in(n),Z_out(n)
+Complex(8) :: X_out(n),Y_out(n),Z_in(n)
+type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+Integer :: Status
+! Perform a complex to complex transform
+Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+Status = DftiCommitDescriptor( My_Desc1_Handle )
+Status = DftiComputeForward( My_Desc1_Handle, X_in, X_out )
+Status = DftiComputeForward( My_Desc1_Handle, Y_in, Y_out )
+!
+Z_in(:) = X_out(:) * Y_out(:)
+!
+Status = DftiComputeBackward( My_Desc1_Handle, Z_in, Z_out )
+Status = DftiFreeDescriptor(My_Desc1_Handle)
+end subroutine do_mkl_dfti_conv
 
 end module green

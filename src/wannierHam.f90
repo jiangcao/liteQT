@@ -12,7 +12,7 @@ COMPLEX(8), ALLOCATABLE :: pmn(:,:,:,:,:) ! momentum operator
 COMPLEX(8), ALLOCATABLE :: Vmn(:,:,:,:) ! Coulomb operator
 real(8), allocatable :: wannier_center(:,:)
 REAL(8), DIMENSION(3) :: alpha,beta,gamm,xhat,yhat,b1,b2
-REAL(8) :: Lx, Ly,cell(3,3) ! in Ang
+REAL(8) :: Lx, Ly,Lz,cell(3,3) ! in Ang
 REAL(8) :: CBM, VBM, Eg ! CB minimum and VB maximum
 REAL(8) :: kt_CBM, kt_VBM ! transverse kt value of CBM and VBM location
 INTEGER :: ymin,ymax,xmin,xmax,nb,nx,ny,nvb, spin_deg
@@ -26,7 +26,7 @@ REAL(8), PARAMETER :: hbar=6.58211899D-16 ! eV s
 REAL(8), PARAMETER :: c0=2.998d8 ! m/s
 
 public :: w90_free_memory, w90_load_from_file, w90_MAT_DEF, w90_MAT_DEF_2D,w90_MAT_DEF_2D_kv, w90_plot_bz,w90_MAT_DEF_ribbon_simple
-public :: w90_plot_x, NB, Lx, Ly, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
+public :: w90_plot_x, NB, Lx, Ly,Lz, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_ribbon_add_peierls, w90_MAT_DEF_full_device, w90_MAT_DEF_dot,w90_dot_add_peierls
 public :: w90_bare_coulomb_full_device,w90_bare_coulomb_blocks
@@ -93,6 +93,7 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     yhat = yhat/norm(yhat)
     Ly=abs(dot_product(beta,yhat)); ! L is in unit of A
     Lx=abs(dot_product(alpha,xhat));
+    Lz=norm(gamm)
     print '(A40)', 'reading Wannier H from file, info:'
     print '(6a5)', 'xmin', 'xmax', 'ymin', 'ymax', 'nb', 'nvb'
     print '(6i5)', xmin, xmax, ymin, ymax, nb, nvb
@@ -151,6 +152,18 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
         wannier_center = aux3        
         deallocate(aux3)
     end if
+    ! bring wannier_center into the first unit-cell, only works for orth.
+    ! to-do: make this general
+    do i=1,NB
+        if (wannier_center(1,i)<0) wannier_center(:,i)=wannier_center(:,i)+alpha
+        if (wannier_center(1,i)>Lx) wannier_center(:,i)=wannier_center(:,i)-alpha
+        if (wannier_center(2,i)<0) wannier_center(:,i)=wannier_center(:,i)+beta
+        if (wannier_center(2,i)>Ly) wannier_center(:,i)=wannier_center(:,i)-beta
+        if (wannier_center(3,i)<0) wannier_center(:,i)=wannier_center(:,i)+gamm
+        if (wannier_center(3,i)>Lz) wannier_center(:,i)=wannier_center(:,i)-gamm
+    end do
+    ! center z around 0
+    wannier_center(3,:)=wannier_center(3,:)-(sum(wannier_center(3,:)/dble(NB)))
     deallocate(ham)
     deallocate(energ)
     deallocate(ind)

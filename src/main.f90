@@ -17,7 +17,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -55,6 +55,7 @@ if (ltrans) then
     read(10,*) mus,mud
     read(10,*) temps, tempd
     read(10,*) alpha_mix
+    read(10,*) lrcoulomb
     read(10,*) ldiag
     read(10,*) lrgf
     read(10,*) lkz
@@ -231,13 +232,13 @@ if (ltrans) then
       allocate(G_lesser(nb*length,nb*length,nen,1))
       allocate(G_greater(nb*length,nb*length,nen,1))
       
-      allocate(P_retarded(nb*length,nb*length,nen*2+1,1))
-      allocate(P_lesser(nb*length,nb*length,nen*2+1,1))
-      allocate(P_greater(nb*length,nb*length,nen*2+1,1))
+      allocate(P_retarded(nb*length,nb*length,nen*2-1,1))
+      allocate(P_lesser(nb*length,nb*length,nen*2-1,1))
+      allocate(P_greater(nb*length,nb*length,nen*2-1,1))
       
-      allocate(W_retarded(nb*length,nb*length,nen*2+1,1))
-      allocate(W_lesser(nb*length,nb*length,nen*2+1,1))
-      allocate(W_greater(nb*length,nb*length,nen*2+1,1))
+      allocate(W_retarded(nb*length,nb*length,nen*2-1,1))
+      allocate(W_lesser(nb*length,nb*length,nen*2-1,1))
+      allocate(W_greater(nb*length,nb*length,nen*2-1,1))
       
       allocate(Sig_retarded(nb*length,nb*length,nen,1))
       allocate(Sig_lesser(nb*length,nb*length,nen,1))
@@ -257,7 +258,11 @@ if (ltrans) then
       call w90_MAT_DEF_full_device(Ham(:,:,1),kt_CBM,length,NS)      
       !
       ! Coulomb operator
-      call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='fromfile')      
+      if (lrcoulomb) then
+        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='fromfile')      
+      else
+        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='pointlike')      
+      endif
       !
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
@@ -268,20 +273,20 @@ if (ltrans) then
       end do
       close(11)
       ! inverse Coulomb operator
-      allocate(tmpV(3*nb*length,3*nb*length))
-      call w90_bare_coulomb_full_device(tmpV(:,:),0.0d0,length*3,eps_screen,r0)      
+!      allocate(tmpV(3*nb*length,3*nb*length))
+!      call w90_bare_coulomb_full_device(tmpV(:,:),0.0d0,length*3,eps_screen,r0)      
       allocate(invV(nb*length,nb*length,1))
 !      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1)
-      call invert(tmpV,3*nb*length)
-      invV(:,:,1)=tmpV(nb*length+1:2*nb*length,nb*length+1:2*nb*length)
-      open(unit=11,file='invV.dat',status='unknown')
-      do i=1, size(invV,1)
-          do j=1, size(invV,2)
-              write(11,'(2I6,2E15.4)') i,j, dble(invV(i,j,1)), aimag(invV(i,j,1))
-          end do
-          write(11,*)
-      end do
-      close(11)
+!      call invert(tmpV,3*nb*length)
+!      invV(:,:,1)=tmpV(nb*length+1:2*nb*length,nb*length+1:2*nb*length)
+!      open(unit=11,file='invV.dat',status='unknown')
+!      do i=1, size(invV,1)
+!          do j=1, size(invV,2)
+!              write(11,'(2I6,2E15.4)') i,j, dble(invV(i,j,1)), aimag(invV(i,j,1))
+!          end do
+!          write(11,*)
+!      end do
+!      close(11)
       !
       open(unit=11,file='Ham.dat',status='unknown')
       do i=1, size(Ham,1)
@@ -379,7 +384,7 @@ if (ltrans) then
     deallocate(en)    
     deallocate(V)
     deallocate(invV)
-    deallocate(tmpV)
+    !deallocate(tmpV)
     if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF
