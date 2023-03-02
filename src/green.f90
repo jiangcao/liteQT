@@ -441,7 +441,7 @@ logical,intent(in)::ldiag
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 !----
 complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
-complex(8),allocatable,dimension(:,:):: B,M00,M10,M01,G00,GBB,S00 ! tmp matrix
+complex(8),allocatable,dimension(:,:):: B ! tmp matrix
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:)
 integer :: iter,ie,nopmax
 integer :: i,j,nm,nop,l,h,iop,ndiag
@@ -506,18 +506,21 @@ do iter=0,niter
   sig_retarded_new=czero
   sig_lesser_new=czero
   sig_greater_new=czero
-  print *, 'calc P, solve W'   
-  dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	* spindeg
+  print *, 'calc P, solve W, add to Sigma_new'     
   ndiag=NB*(min(NS,iter))
   if (ldiag) ndiag=0  
   print *,'ndiag=',min(ndiag,nm_dev)
   !
   do nop=-nen+1,nen-1    
+    print '(I5,A,I5)',nop+nen,'/',nen*2-1    
     P_lesser = czero
     P_greater = czero
     P_retarded = czero
-    do ie = max(nop+1,1),min(nen,nen+nop)                   
-      do i = 1, nm_dev        
+    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	* spindeg    
+    !$omp parallel default(none) private(l,h,i,ie) shared(ndiag,nop,nen,P_lesser,P_greater,P_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
+    !$omp do
+    do i = 1, nm_dev        
+      do ie = max(nop+1,1),min(nen,nen+nop)                   
         l=max(i-ndiag,1)
         h=min(nm_dev,i+ndiag)                            
         P_lesser(i,l:h) = P_lesser(i,l:h) + G_lesser(i,l:h,ie) * G_greater(l:h,i,ie-nop)
@@ -526,7 +529,9 @@ do iter=0,niter
                   & G_lesser(i,l:h,ie) * conjg(G_retarded(i,l:h,ie-nop)) +&
                   & G_retarded(i,l:h,ie) * G_lesser(l:h,i,ie-nop)        
       enddo
-    enddo
+    enddo    
+    !$omp end do
+    !$omp end parallel
     P_lesser=P_lesser*dE
     P_greater=P_greater*dE  
     P_retarded=P_retarded*dE
@@ -534,7 +539,6 @@ do iter=0,niter
     W_lesser=czero
     W_greater=czero
     W_retarded=czero  
-    print '(I5,A,I5)',nop+nen,'/',nen*2-1    
     !! B = -V P
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:),nm_dev,czero,B,nm_dev)
     !! B = I-VP    
@@ -552,20 +556,23 @@ do iter=0,niter
     ! Accumulate the GW to Sigma
     dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)                
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
-    do ie=1,nen
-      if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
-        do i=1,nm_dev
-          l=max(i-ndiag,1)
-          h=min(nm_dev,i+ndiag)      
+    !$omp parallel default(none) private(l,h,i,ie) shared(ndiag,nop,nen,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
+    !$omp do
+    do i=1,nm_dev
+      l=max(i-ndiag,1)
+      h=min(nm_dev,i+ndiag)           
+      do ie=1,nen
+        if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
           Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h)
           Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie)+G_greater(i,l:h,ie-nop)*W_greater(i,l:h)
           Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h) 
           Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h) 
           Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h)          
-        enddo      
-      endif    
+        endif     
+      enddo   
     enddo
-    !    
+    !$omp end do
+    !$omp end parallel    
   enddo                                
   !
   Sig_lesser_new = Sig_lesser_new  * dE
@@ -1561,9 +1568,9 @@ subroutine get_OBC_blocks_for_W(n,v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01,
 implicit none
 integer,intent(in)::n,NBC
 complex(8),intent(in),dimension(n,n)::v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01
-complex(8),intent(out),dimension(n,n)::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+complex(8),intent(out),dimension(n*NBC,n*NBC)::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
     LL00,LL01,LL10,LG00,LG01,LG10
-complex(8),dimension(n*nbc,n*nbc)::II
+complex(8),dimension(n*NBC,n*NBC)::II
 
 select case (NBC)
   !
@@ -1628,8 +1635,9 @@ M01=-matmul(V00,PR01)-matmul(V01,PR00)
 M10=-matmul(V10,PR00)-matmul(V00,PR10)
 !
 LL00=matmul(matmul(V10,PL00),V01)+matmul(matmul(V10,PL01),V00)+&
-    matmul(matmul(V00,PL10),V01)+matmul(matmul(V00,PL00),V00)+matmul(matmul(V00,PL01),V10)+&
-    matmul(matmul(V01,PL10),V00)+matmul(matmul(V01,PL00),V10)
+     matmul(matmul(V00,PL10),V01)+matmul(matmul(V00,PL00),V00)+&
+     matmul(matmul(V00,PL01),V10)+&
+     matmul(matmul(V01,PL10),V00)+matmul(matmul(V01,PL00),V10)
 !
 LL01=matmul(matmul(V10,PL01),V01)+&
      matmul(matmul(V00,PL00),V01)+matmul(matmul(V00,PL01),V00)+&
@@ -1638,15 +1646,15 @@ LL01=matmul(matmul(V10,PL01),V01)+&
 LL10=-transpose(conjg(LL01))
 !
 LG00=matmul(matmul(V10,PG00),V01)+matmul(matmul(V10,PG01),V00)+&
-     matmul(matmul(V00,PG10),V01)+matmul(matmul(V00,PG00),V00)+matmul(matmul(V00,PG01),V10)+&
+     matmul(matmul(V00,PG10),V01)+matmul(matmul(V00,PG00),V00)+&
+     matmul(matmul(V00,PG01),V10)+&
      matmul(matmul(V01,PG10),V00)+matmul(matmul(V01,PG00),V10)
 !
 LG01=matmul(matmul(V10,PG01),V01)+&
      matmul(matmul(V00,PG00),V01)+matmul(matmul(V00,PG01),V00)+&
      matmul(matmul(V01,PG10),V01)+matmul(matmul(V01,PG00),V00)
-
-LG10=-transpose(conjg(LG01))
-  
+!
+LG10=-transpose(conjg(LG01))  
 end subroutine get_OBC_blocks_for_W
 
 
