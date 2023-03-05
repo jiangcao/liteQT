@@ -473,14 +473,14 @@ do iop=1,nnop2
   nops(nnop2+nnop1*2-1+iop) = -nops(nnop2+1-iop)
 enddo
 wen(:) = dble(nops(:))*dble(dE)
-print *,'-------------------------------------------------------------'
+print *,'---------------------------------------------------------------'
 print *, ' Encut: intra    inter    Eg (eV)' 
 print '(A6,3F8.3)',' ',encut,egap
 print *, ' Nop='
 print '(10I5)',nops
 print *, ' Eop= (eV)'
 print '(6F8.3)',wen
-print *, '------------------------------------------------------------'
+print *, '--------------------------------------------------------------'
 !
 allocate(siglead(NB*NS,NB*NS,nen,2))
 ! get leads sigma
@@ -1708,7 +1708,8 @@ select case (NBC)
 end select
 
 call identity(II,NBC*N)
-M00=II*dcmplx(1.0d0,1d-10)-matmul(V10,PR01)-matmul(V00,PR00)-matmul(V01,PR10)
+M00=II*dcmplx(1.0d0,1d-10)-matmul(V10,PR01)
+M00=M00-matmul(V00,PR00)-matmul(V01,PR10)
 M01=-matmul(V00,PR01)-matmul(V01,PR00)
 M10=-matmul(V10,PR00)-matmul(V00,PR10)
 !
@@ -1744,10 +1745,9 @@ character(len=*),intent(in)::typ
 complex(8),intent(in),dimension(nm,nm)::xR,LL00,LL01,LG00,LG01,M10
 complex(8),intent(out),dimension(nm,nm)::dLL11,dLG11
 ! -----
-complex(8),dimension(nm,nm)::AL,AG,FL,FG,A,V,iV,yL_NN,wL_NN,yG_NN,wG_NN,tmp1
+complex(8),dimension(nm,nm)::AL,AG,FL,FG,A,V,iV,yL_NN,wL_NN,yG_NN,wG_NN,tmp1,tmp2
 complex(8),dimension(nm)::E
 integer::i,j
-!
 !!!! AL=M10*xR*LL01;
 !!!! AG=M10*xR*LG01;
 call zgemm('n','n',nm,nm,nm,cone,M10,nm,xR,nm,czero,tmp1,nm)
@@ -1762,6 +1762,9 @@ call zgemm('n','n',nm,nm,nm,cone,xR,nm,(LG00-(AG-transpose(conjg(AG)))),nm,czero
 call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,FG,nm)
 !
 call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,V,nm)  
+do i=1,nm
+  V(i,i)=V(i,i)+dcmplx(0.0d0,1.0d-4)  ! 1i*1e-4 added to stabilize matrix
+enddo
 E=eigv(nm,V)
 iV=V
 call invert(iV,nm)
@@ -1771,6 +1774,13 @@ call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,iV,nm,czero,yL_NN,nm)
 yL_NN=yL_NN/(1.0d0 - sum(E*conjg(E)))
 call zgemm('n','n',nm,nm,nm,cone,V,nm,yL_NN,nm,czero,tmp1,nm)
 call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,V,nm,czero,wL_NN,nm)
+!refinement iteration
+call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,tmp1,nm)
+call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,wL_NN,nm,czero,tmp2,nm)
+call zgemm('n','c',nm,nm,nm,cone,tmp2,nm,M10,nm,czero,tmp1,nm)
+call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,tmp2,nm)
+wL_NN=FL+tmp2
+!
 call zgemm('n','n',nm,nm,nm,cone,M10,nm,wL_NN,nm,czero,tmp1,nm)
 call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dLL11,nm)
 dLL11=dLL11-(AL-transpose(conjg(AL)))
@@ -1780,6 +1790,13 @@ call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,iV,nm,czero,yG_NN,nm)
 yG_NN=yG_NN/(1.0d0 - sum(E*conjg(E)))
 call zgemm('n','n',nm,nm,nm,cone,V,nm,yG_NN,nm,czero,tmp1,nm)
 call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,V,nm,czero,wG_NN,nm)
+!refinement iteration
+call zgemm('n','n',nm,nm,nm,cone,xR,nm,M10,nm,czero,tmp1,nm)
+call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,wG_NN,nm,czero,tmp2,nm)
+call zgemm('n','c',nm,nm,nm,cone,tmp2,nm,M10,nm,czero,tmp1,nm)
+call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,xR,nm,czero,tmp2,nm)
+wG_NN=FG+tmp2
+!
 call zgemm('n','n',nm,nm,nm,cone,M10,nm,wG_NN,nm,czero,tmp1,nm)
 call zgemm('n','c',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dLG11,nm)
 dLG11=dLG11-(AG-transpose(conjg(AG)))
@@ -1801,7 +1818,7 @@ complex(8),dimension(:,:),allocatable::dM11,xR11,dLL11,dLG11,dV11
 complex(8),dimension(:,:),allocatable::dMnn,xRnn,dLLnn,dLGnn,dVnn
 integer::i,NL,NR,NT,LBsize,RBsize,NBC
 real(8)::condL,condR
-NBC=2
+NBC=1
 NL=NB*NS ! left contact block size
 NR=NB*NS ! right contact block size
 NT=nm_dev! total size
@@ -1871,9 +1888,9 @@ call get_OBC_blocks_for_W(NL,V(1:NL,1:NL),V(1:NL,NL+1:2*NL),PR(1:NL,1:NL),PR(1:N
     V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
     LL00,LL01,LL10,LG00,LG01,LG10)
 !    
-call get_OBC_blocks_for_W(NR,V(NT-NR+1:NT,NT-NR+1:NT),V(NT-2*NR+1:NT-NR,NT-NR+1:NT),PR(NT-NR+1:NT,NT-NR+1:NT),&
-    PR(NT-2*NR+1:NT-NR,NT-NR+1:NT),PL(NT-NR+1:NT,NT-NR+1:NT),PL(NT-2*NR+1:NT-NR,NT-NR+1:NT),&
-    PG(NT-NR+1:NT,NT-NR+1:NT),PG(NT-2*NR+1:NT-NR,NT-NR+1:NT),NBC,&
+call get_OBC_blocks_for_W(NR,V(NT-NR+1:NT,NT-NR+1:NT),transpose(conjg(V(NT-NR+1:NT,NT-2*NR+1:NT-NR))),PR(NT-NR+1:NT,NT-NR+1:NT),&
+    transpose(PR(NT-NR+1:NT,NT-2*NR+1:NT-NR)),PL(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PL(NT-NR+1:NT,NT-2*NR+1:NT-NR))),&
+    PG(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PG(NT-NR+1:NT,NT-2*NR+1:NT-NR))),NBC,&
     VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
     LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
 !
@@ -1909,33 +1926,29 @@ LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
   matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
   
 ! WR/WL/WG OBC Left
-call surface_function(NL,M00,M10,M01,xR11,condL)
-dM11=matmul(matmul(M10,xR11),M01)
-dV11=matmul(matmul(M10,xR11),V01)
+call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
 ! WR/WL/WG OBC right
-call surface_function(NR,MNN,MNN1,MN1N,xRNN,condR)
-dMNN=matmul(matmul(MNN1,xRNN),MN1N)
-dVNN=matmul(matmul(MNN1,xRNN),VN1N)
+call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
 allocate(VV(nm_dev,nm_dev))
 VV = V
-if (condL<1.0d-6) then   
-    !
+!if (condL<1.0d-6) then   
+!    !
     call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
     !
     M(1:LBsize,1:LBsize)=M(1:LBsize,1:LBsize) - dM11
-    VV(1:LBsize,1:LBsize)=B(1:LBsize,1:LBsize) - dV11    
+    VV(1:LBsize,1:LBsize)=V(1:LBsize,1:LBsize) - dV11    
     LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + dLL11
     LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + dLG11    
-endif
-if (condR<1.0d-6) then    
-    !
+!endif
+!if (condR<1.0d-6) then    
+!    !
     call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
     !
     M(NT-RBsize+1:NT,NT-RBsize+1:NT)=M(NT-RBsize+1:NT,NT-RBsize+1:NT) - dMNN
-    VV(NT-RBsize+1:NT,NT-RBsize+1:NT)=B(NT-RBsize+1:NT,NT-RBsize+1:NT)- dVNN
+    VV(NT-RBsize+1:NT,NT-RBsize+1:NT)=V(NT-RBsize+1:NT,NT-RBsize+1:NT)- dVNN
     LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLLNN
     LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLGNN    
-endif
+!endif
 !!!! calculate W^r = (I - V P^r)^-1 V    
 call invert(M,nm_dev) ! M -> xR
 call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,VV,nm_dev,czero,WR,nm_dev)           
@@ -1945,53 +1958,39 @@ call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WL,nm_dev)
 call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LG,nm_dev,czero,B,nm_dev) 
 call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WG,nm_dev)  
 deallocate(M,LL,LG,B,VV)
-deallocate(V00)
-deallocate(V01)
-deallocate(V10)
-deallocate(M00)
-deallocate(M01)
-deallocate(M10)
-deallocate(PR00)
-deallocate(PR01)
-deallocate(PR10)
-deallocate(PG00)
-deallocate(PG01)
-deallocate(PG10)
-deallocate(PL00)
-deallocate(PL01)
-deallocate(PL10)
-deallocate(LG00)
-deallocate(LG01)
-deallocate(LG10)
-deallocate(LL00)
-deallocate(LL01)
-deallocate(LL10)
-deallocate(VNN)
-deallocate(VNN1)
-deallocate(Vn1n)
-deallocate(Mnn)
-deallocate(Mnn1)
-deallocate(Mn1n)
-deallocate(PRnn)
-deallocate(PRnn1)
-deallocate(PRn1n)
-deallocate(PGnn)
-deallocate(PGnn1)
-deallocate(PGn1n)
-deallocate(PLnn)
-deallocate(PLnn1)
-deallocate(PLn1n)
-deallocate(LGnn)
-deallocate(LGnn1)
-deallocate(LGn1n)
-deallocate(LLnn)
-deallocate(LLnn1)
-deallocate(LLn1n)
+deallocate(V00,V01,V10)
+deallocate(M00,M01,M10)
+deallocate(PR00,PR01,PR10)
+deallocate(PG00,PG01,PG10)
+deallocate(PL00,PL01,PL10)
+deallocate(LG00,LG01,LG10)
+deallocate(LL00,LL01,LL10)
+deallocate(VNN,VNN1,Vn1n)
+deallocate(Mnn,Mnn1,Mn1n)
+deallocate(PRnn,PRnn1,PRn1n)
+deallocate(PGnn,PGnn1,PGn1n)
+deallocate(PLnn,PLnn1,PLn1n)
+deallocate(LGnn,LGnn1,LGn1n)
+deallocate(LLnn,LLnn1,LLn1n)
 deallocate(dM11,xR11,dLL11,dLG11,dV11)
 deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
 end subroutine green_calc_w
 
-
+subroutine open_boundary_conditions(nm,M00,M01,M10,V10,xR,dM,dV,cond)
+implicit none
+integer,intent(in)::nm
+complex(8),intent(in),dimension(nm,nm)::M00,M01,M10,V10
+complex(8),intent(out),dimension(nm,nm)::xR,dM,dV
+real(8),intent(out)::cond
+complex(8),dimension(nm,nm)::tmp1
+call surface_function(nm,M00,M01,M10,xR,cond);
+!dM=M01*xR*M10
+call zgemm('n','n',nm,nm,nm,cone,M01,nm,xR,nm,czero,tmp1,nm)
+call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,M10,nm,czero,dM,nm)
+!dV=M01*xR*V10
+call zgemm('n','n',nm,nm,nm,cone,M01,nm,xR,nm,czero,tmp1,nm)
+call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,V10,nm,czero,dV,nm)
+end subroutine open_boundary_conditions
 
 FUNCTION eigv(NN, A)
 implicit none
