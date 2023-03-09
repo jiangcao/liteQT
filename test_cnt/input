@@ -1,21 +1,26 @@
-3         !ns
+4         !ns
 1         !width
 200        !nkx
 1         ! num B 
 0.0           !B values
 1   ! axis of ribbon length 
 128  ! num CPU
-T   ! reorder axis
-3 2 1
+F   ! reorder axis
 F   ! quantum dot
 T   ! transport 
-15         !length
--22.0  8.0   5000    ! emin emax num_en
-F   ! read potential from pot_dat
+28         ! length
+-15.0  5.0   2000    ! emin emax num_en
+T   ! read potential from pot_dat
+1.0  ! scale factor
 30  ! num iter
 1.0  ! epsilon 
 1.5  ! r0 [ang]
--3.7  -3.7  ! mu_s mu_d 
+-3.0  -3.6  ! mu_s mu_d 
 300.0   300.0  ! temperature 
 0.5   ! alpha mix
-F
+0.6  4.0  ! intraband interband cutoff energies for P and W
+T     ! read Coulomb blocks
+F     ! only diag
+F     ! RGF
+F     ! 2d kz
+F     ! e photon
