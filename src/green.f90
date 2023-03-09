@@ -550,6 +550,9 @@ do iter=0,niter
   call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
   call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
   call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
+  G_lesser(:,:,:)=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
+  G_greater(:,:,:)=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
@@ -1115,9 +1118,6 @@ deallocate(sig)
 if ((present(G_lesser)).or.(present(G_greater))) then      
   deallocate(B,C,sig_lesser,sig_greater)
 end if
-if (solve_Gr) G_retarded(:,:,:)=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
-if (present(G_lesser)) G_lesser(:,:,:)=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
-if (present(G_greater)) G_greater(:,:,:)=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
 end subroutine green_calc_g
 
 ! calculate bond current using I_ij = H_ij G<_ji - H_ji G^<_ij

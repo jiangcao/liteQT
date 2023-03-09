@@ -1,6 +1,6 @@
 PROGRAM main
-USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks,w90_inverse_bare_coulomb_full_device
-use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D
+USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks,Eg
+use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D,green_solve_gw_1D_memsaving
 use green_rgf, only : green_rgf_solve_gw_1d
 implicit none
 real(8), parameter :: pi=3.14159265359d0
@@ -24,7 +24,7 @@ complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
-real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale
+real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2)
 real(8) :: intensity,hw
 
 open(unit=10,file='input',status='unknown')
@@ -55,6 +55,7 @@ if (ltrans) then
     read(10,*) mus,mud
     read(10,*) temps, tempd
     read(10,*) alpha_mix
+    read(10,*) encut(1:2) ! intraband interband cutoff energies for P and W
     read(10,*) lrcoulomb
     read(10,*) ldiag
     read(10,*) lrgf
@@ -164,7 +165,7 @@ if (ltrans) then
         ! device Ham matrix
         call w90_MAT_DEF_full_device(Ham(:,:,ikz),kz,length)      
         ! Coulomb operator
-        call w90_bare_coulomb_full_device(V(:,:,ikz),kz,length,eps_screen,r0)      
+        call w90_bare_coulomb_full_device(V(:,:,ikz),kz,length,eps_screen,r0,ldiag)      
       enddo
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
@@ -196,11 +197,11 @@ if (ltrans) then
       end do
       nm_dev=nb*length    
       !
-      call green_solve_gw_2D(niter,nm_dev,Lx,length,temps,tempd,mus,mud,&
+      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
         alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
         G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
         W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-        Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
+        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
     else ! 1d case
       print *, 'Build the full device H'
       print *, 'length=',length
@@ -232,14 +233,14 @@ if (ltrans) then
       allocate(G_lesser(nb*length,nb*length,nen,1))
       allocate(G_greater(nb*length,nb*length,nen,1))
       
-      allocate(P_retarded(nb*length,nb*length,nen*2-1,1))
-      allocate(P_lesser(nb*length,nb*length,nen*2-1,1))
-      allocate(P_greater(nb*length,nb*length,nen*2-1,1))
-      
-      allocate(W_retarded(nb*length,nb*length,nen*2-1,1))
-      allocate(W_lesser(nb*length,nb*length,nen*2-1,1))
-      allocate(W_greater(nb*length,nb*length,nen*2-1,1))
-      
+!      allocate(P_retarded(nb*length,nb*length,nen*2-1,1))
+!      allocate(P_lesser(nb*length,nb*length,nen*2-1,1))
+!      allocate(P_greater(nb*length,nb*length,nen*2-1,1))
+!      
+!      allocate(W_retarded(nb*length,nb*length,nen*2-1,1))
+!      allocate(W_lesser(nb*length,nb*length,nen*2-1,1))
+!      allocate(W_greater(nb*length,nb*length,nen*2-1,1))
+!      
       allocate(Sig_retarded(nb*length,nb*length,nen,1))
       allocate(Sig_lesser(nb*length,nb*length,nen,1))
       allocate(Sig_greater(nb*length,nb*length,nen,1))
@@ -259,9 +260,9 @@ if (ltrans) then
       !
       ! Coulomb operator
       if (lrcoulomb) then
-        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='fromfile')      
+        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,ldiag,method='fromfile')      
       else
-        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,method='pointlike')      
+        call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,ldiag,method='pointlike')      
       endif
       !
       open(unit=11,file='V.dat',status='unknown')
@@ -352,11 +353,16 @@ if (ltrans) then
          endif
          
       else
-          call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),invV(:,:,1),&
-            G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
-            W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
+        !  call green_solve_gw_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+        !    alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),invV(:,:,1),&
+        !    G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
+        !    W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+        !    Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
+            
+          call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+            G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg)
       endif
     endif 
     
@@ -369,12 +375,12 @@ if (ltrans) then
     deallocate(G_retarded)
     deallocate(G_lesser)
     deallocate(G_greater)
-    deallocate(P_retarded)
-    deallocate(P_lesser)
-    deallocate(P_greater)
-    deallocate(W_retarded)
-    deallocate(W_lesser)
-    deallocate(W_greater)
+ !   deallocate(P_retarded)
+ !   deallocate(P_lesser)
+ !   deallocate(P_greater)
+ !   deallocate(W_retarded)
+ !   deallocate(W_lesser)
+ !   deallocate(W_greater)
     deallocate(Sig_retarded)
     deallocate(Sig_lesser)
     deallocate(Sig_greater)
@@ -422,7 +428,7 @@ if (ltrans) then
         end do
     end do      
     ! coulomb operator blocks
-    call w90_bare_coulomb_blocks(Vii(:,:,1),V1i(:,:,1),0.0, 0.0,eps_screen,r0,ns)
+    call w90_bare_coulomb_blocks(Vii(:,:,1),V1i(:,:,1),0.0, 0.0,eps_screen,r0,ns,ldiag)
     !
     do i=2,length
       Vii(:,:,i)=Vii(:,:,1)
