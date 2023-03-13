@@ -3,7 +3,7 @@ MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.11
 FC90 = /usr/sepp/bin/ifort-2020-af
 #F90_FLAGS =  -r8 -check bounds -traceback -fpp 
 MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
-F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback -qopenmp # -check bounds 
+F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback -qopenmp -qopt-matmul # -check bounds  
 LIBS = -I$(MKLROOT)/include
 
 

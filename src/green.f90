@@ -143,7 +143,7 @@ real(8)::Nphot,mu(2)
 !    open(unit=101,file='sancho_sig.dat',status='unknown')
 !    close(101)
     print *, 'calc G'  
-    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu,(/temps,tempd/))    
+    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,mu=mu,temp=(/temps,tempd/))    
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('eph_Jdens',iter,cur,nen,en,length,NB,Lx)
     call write_current('eph_I',iter,tot_cur,length,NB,1,Lx)
