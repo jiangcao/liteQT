@@ -425,9 +425,12 @@ select case(trim(cmethod))
                         & Vmn(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) ) / eps          
                     end if                 
                 else
-                    if ((i-k <= xmax ) .and. (i-k >= xmin )) then  
-                        V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                        & Vmn(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) ) / eps                           
+                    if (abs(i-k)<4)then
+                      V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                    & Vmn(:,:,i-k-xmin+1,j-ymin+1) * exp(-z1j* dot_product(r,kv) ) / eps                           
+                    else
+                      V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = V(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                    & bare_coulomb(i-k,j,eps,r0,ldiag) * exp(-z1j* dot_product(r,kv) )    
                     endif
                 end if
             end do
@@ -960,6 +963,7 @@ implicit none
 integer::i
 real(8)::reV(NB)
 real(8),parameter::ry2ev=13.6d0
+real(8)::tmp(NB,NB)
 allocate(Vmn(NB,NB,nx,ny))
 Vmn=dcmplx(0.0d0,0.0d0)
 
@@ -969,6 +973,9 @@ do i=1,NB
     Vmn(:,i,-xmin+1,1)=dcmplx(reV,0.0d0)*ry2ev
 enddo
 close(10)
+!! symmetrize V
+tmp=transpose(conjg(Vmn(:,:,-xmin+1,1)))
+Vmn(:,:,-xmin+1,1)=(Vmn(:,:,-xmin+1,1)+tmp(:,:))/2.0d0
 
 open(unit=10,file='V_CNT_0_1_dat',status='unknown')
 do i=1,NB

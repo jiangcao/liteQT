@@ -337,11 +337,11 @@ if (ltrans) then
       
         if (.not. lnogw) then
           call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-              alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),invV(:,:,1),&
+              alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
               Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
               W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-              Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
+              Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg)
          
          else
          
@@ -394,7 +394,7 @@ if (ltrans) then
     if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF
-    print *, '~~~~~~~~~~~~ RGF ~~~~~~~~~~~~'
+    print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'
     
     print *, 'Build the full device H'
     print *, 'length=',length*NS
