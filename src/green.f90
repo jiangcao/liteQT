@@ -563,7 +563,7 @@ do iter=0,niter
   G_lesser(:,:,:)=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
   G_greater(:,:,:)=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
-  call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+  !call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_g',iter,G_greater,nen,en,length,NB,(/1.0,1.0/))
   !        
@@ -602,14 +602,14 @@ do iter=0,niter
     P_lesser=P_lesser*dE
     P_greater=P_greater*dE  
     P_retarded=P_retarded*dE
-    call write_matrix('P_r',iter,P_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+    !call write_matrix('P_r',iter,P_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
     !call write_matrix_E('P_l',iter,P_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
     !call write_matrix_E('P_g',iter,P_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
     !
     ! calculate W
     call green_calc_w(NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
-    call write_matrix('W_r',iter,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+    !call write_matrix('W_r',iter,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
     !call write_matrix_E('W_g',iter,W_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
     !call write_matrix_E('W_l',iter,W_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
     !
@@ -652,7 +652,7 @@ do iter=0,niter
   !!!Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
   !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
   !
-  call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
+  !call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_l',iter,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_g',iter,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
   ! mixing with the previous one
