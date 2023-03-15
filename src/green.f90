@@ -46,7 +46,7 @@ real(8),intent(in)::encut(2) ! intraband and interband cutoff for P
 !----
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
-integer::iter
+integer::iter,ndiagmin
   print *,'======================================='
   print *,'====== green_solve_gw_ephoton_1D ======'
   print *,'======================================='
@@ -56,11 +56,13 @@ integer::iter
   allocate(Ispec(nm_dev,nm_dev,nen))
   allocate(Itot(nm_dev,nm_dev))
   do iter=0,niter
+    ndiagmin=NB*(min(NS,iter))
+    if (ldiag) ndiagmin = 0
     call green_solve_gw_1D_memsaving(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
             alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),&
             Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
-            Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),ldiag,encut,Egap)
+            Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),ldiag,encut,Egap,ndiagmin=ndiagmin)
     call green_solve_ephoton_freespace_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
             0.0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
             Pmn(:,:,:),polarization,intensity,hw,&
@@ -312,7 +314,7 @@ do iter=0,niter
   sumtot_ecur=0.0d0
   do ikz=1,nphiz
     print *, ' ikz=', ikz
-    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu,(/temps,tempd/))
+    call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu=mu,temp=(/temps,tempd/))
     call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0,-2.0/))
     call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     cur_k(:,:,:,ikz)=cur
@@ -471,9 +473,10 @@ end subroutine green_solve_gw_2D
 subroutine green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap)
+  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin)
 implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+integer, intent(in), optional :: ndiagmin
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
 complex(8), intent(in):: V(nm_dev,nm_dev)
@@ -560,7 +563,7 @@ do iter=0,niter
   G_lesser(:,:,:)=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
   G_greater(:,:,:)=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
-  !call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+  call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_g',iter,G_greater,nen,en,length,NB,(/1.0,1.0/))
   !        
@@ -571,6 +574,7 @@ do iter=0,niter
   print *, 'calc P, solve W, add to Sigma_new'     
   ndiag=NB*(min(NS,iter))
   if (ldiag) ndiag=0  
+  if (present(ndiagmin)) ndiag=max(ndiagmin,ndiag)
   print *,'ndiag=',min(ndiag,nm_dev)
   !
   print *,'   i / n :  Nop   Eop (eV)'
@@ -598,23 +602,17 @@ do iter=0,niter
     P_lesser=P_lesser*dE
     P_greater=P_greater*dE  
     P_retarded=P_retarded*dE
+    call write_matrix('P_r',iter,P_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+    !call write_matrix_E('P_l',iter,P_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+    !call write_matrix_E('P_g',iter,P_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+    !
     ! calculate W
     call green_calc_w(NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
-!    !! B = -V P
-!    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,P_retarded(:,:),nm_dev,czero,B,nm_dev)
-!    !! B = I-VP    
-!    do i=1,nm_dev
-!      B(i,i) = 1.0d0 + B(i,i)
-!    enddo        
-!    !!!! calculate W^r = (I - V P^r)^-1 V       
-!    call invert(B,nm_dev)
-!    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,W_retarded(:,:),nm_dev)           
-!    ! calculate W^< and W^> = W^r P^<> W^r dagger
-!    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:),nm_dev,P_lesser(:,:),nm_dev,czero,B,nm_dev) 
-!    call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:),nm_dev,czero,W_lesser(:,:),nm_dev) 
-!    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:),nm_dev,P_greater(:,:),nm_dev,czero,B,nm_dev) 
-!    call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:),nm_dev,czero,W_greater(:,:),nm_dev)   
+    call write_matrix('W_r',iter,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+    !call write_matrix_E('W_g',iter,W_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+    !call write_matrix_E('W_l',iter,W_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
+    !
     ! Accumulate the GW to Sigma
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
     !$omp parallel default(none) private(l,h,i,ie) shared(ndiag,nop,nen,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
@@ -653,7 +651,7 @@ do iter=0,niter
   enddo
   !!!Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
   !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
-!  call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
+  call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_l',iter,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_g',iter,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
   ! mixing with the previous one
@@ -1059,7 +1057,7 @@ if (present(tr)) then
   tr=0.0d0
 endif
 do ie = 1, ne
-  print '(I5,A,I5)',ie,'/',ne
+  if (mod(ie,ne/10)==0) print '(I5,A,I5)',ie,'/',ne
   if (solve_Gr) G_retarded(:,:,ie) = - Ham(:,:) - Scat_Sig_retarded(:,:,ie) 
   if ((present(G_lesser)).or.(present(G_greater))) then    
     if (ie .eq. 1) then
@@ -1307,6 +1305,30 @@ end do
 close(11)
 end subroutine write_matrix_summed_overE
 
+! write a matrix for one energy index into a file
+subroutine write_matrix(dataset,i,G,en,length,NB,coeff)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(:,:)
+integer, intent(in)::i,length,NB
+real(8), intent(in)::en,coeff(2)
+integer:: ie,j,ib,l
+complex(8)::tr
+logical :: lexist
+inquire(file=trim(dataset)//TRIM(STRING(i))//'.dat', exist=lexist)
+if (lexist) then
+    open(11, file=trim(dataset)//TRIM(STRING(i))//'.dat', status="old", position="append", action="write")
+else
+    open(11, file=trim(dataset)//TRIM(STRING(i))//'.dat', status="new", action="write")
+end if
+do l=1,length*NB
+    do j = 1,length*NB
+        tr = G(l,j)            
+        write(11,'(E18.6,2I8,2E18.6)') en,l,j, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+    end do
+end do
+write(11,*)    
+close(11)
+end subroutine write_matrix
 
 ! write a matrix for all energy index into a file
 subroutine write_matrix_E(dataset,i,G,nen,en,length,NB,coeff)
