@@ -651,6 +651,7 @@ do iter=0,niter
   enddo
   !!!Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
   !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
+  !
   call write_matrix_E('Sigma_r',iter,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_l',iter,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('Sigma_g',iter,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
@@ -2130,9 +2131,9 @@ lwork= max(1,2*NN-1)
 lrwork= max(1,3*NN-2)
 allocate(work(lwork))
 allocate(rwork(lrwork))
-!
+
 CALL zheev( 'V','U', NN, A, NN, W, WORK, LWORK, RWORK, INFO )
-!
+
 deallocate(work,rwork)
 if (INFO.ne.0)then
    write(*,*)'SEVERE WARNING: ZHEEV HAS FAILED. INFO=',INFO
