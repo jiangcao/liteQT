@@ -971,6 +971,7 @@ open(unit=10,file='V_CNT_0_0_dat',status='unknown')
 do i=1,NB
     read(10,*) reV(1:NB)
     Vmn(:,i,-xmin+1,1)=dcmplx(reV,0.0d0)*ry2ev
+    Vmn(i,i,-xmin+1,1)=dcmplx(max(reV(i)*ry2ev,0.01),0.0d0)
 enddo
 close(10)
 !! symmetrize V

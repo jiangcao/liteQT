@@ -4,7 +4,8 @@ use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_
 use green_rgf, only : green_rgf_solve_gw_1d
 implicit none
 real(8), parameter :: pi=3.14159265359d0
-integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length
+integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac
+integer,allocatable:: orb_vac(:)
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
 complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:),tmpV(:,:)
@@ -26,7 +27,7 @@ integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2)
 real(8) :: intensity,hw
-
+num_vac=0 ! number of vacancies
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
 read(10,*) width
@@ -34,6 +35,11 @@ read(10,*) nkx
 read(10,*) num_B
 allocate(B(num_B))
 read(10,*) B
+if (B(1)>0) then
+  num_vac=floor(B(1))
+  allocate(orb_vac(num_vac))
+  read(10,*) orb_vac ! orbit index 
+endif
 read(10,*) axis
 read(10,*) ncpu
 read(10,*) reorder_axis
@@ -265,6 +271,17 @@ if (ltrans) then
         call w90_bare_coulomb_full_device(V(:,:,1),0.0d0,length,eps_screen,r0,ldiag,method='pointlike')      
       endif
       !
+      ! apply vacancies to Ham and V
+      if (num_vac>0) then
+        do i=1,num_vac
+          Ham(orb_vac(i),:,1)=0.0d0
+          Ham(:,orb_vac(i),1)=0.0d0
+          Ham(orb_vac(i),orb_vac(i),1)=1e4
+          V(orb_vac(i),:,1)=0.0d0
+          V(:,orb_vac(i),1)=0.0d0
+        enddo
+      endif
+      !
       open(unit=11,file='V.dat',status='unknown')
       do i=1, size(V,1)
           do j=1, size(V,2)
@@ -273,21 +290,6 @@ if (ltrans) then
           write(11,*)
       end do
       close(11)
-      ! inverse Coulomb operator
-!      allocate(tmpV(3*nb*length,3*nb*length))
-!      call w90_bare_coulomb_full_device(tmpV(:,:),0.0d0,length*3,eps_screen,r0)      
-      allocate(invV(nb*length,nb*length,1))
-!      call w90_inverse_bare_coulomb_full_device(invV(:,:,1),0.0,length,eps_screen,r0,20,1)
-!      call invert(tmpV,3*nb*length)
-!      invV(:,:,1)=tmpV(nb*length+1:2*nb*length,nb*length+1:2*nb*length)
-!      open(unit=11,file='invV.dat',status='unknown')
-!      do i=1, size(invV,1)
-!          do j=1, size(invV,2)
-!              write(11,'(2I6,2E15.4)') i,j, dble(invV(i,j,1)), aimag(invV(i,j,1))
-!          end do
-!          write(11,*)
-!      end do
-!      close(11)
       !
       open(unit=11,file='Ham.dat',status='unknown')
       do i=1, size(Ham,1)
@@ -313,6 +315,14 @@ if (ltrans) then
       ! momentum operator   
       allocate(Pmn(nb*length,nb*length,3,1))
       call w90_momentum_full_device(Pmn(:,:,:,1),0.0d0,length,NS,'approx')
+      !
+      ! apply vacancies to P
+      if (num_vac>0) then
+        do i=1,num_vac
+          Pmn(orb_vac(i),:,:,1)=0.0d0
+          Pmn(:,orb_vac(i),:,1)=0.0d0          
+        enddo
+      endif
       !
       open(unit=11,file='Px.dat',status='unknown')      
       do i=1, size(Pmn,1)
@@ -362,7 +372,7 @@ if (ltrans) then
           call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
             alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
             G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg)
+            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg,writeGF=.false.)
       endif
     endif 
     
@@ -388,9 +398,7 @@ if (ltrans) then
     deallocate(Sig_lesser_new)
     deallocate(Sig_greater_new)
     deallocate(en)    
-    deallocate(V)
-    deallocate(invV)
-    !deallocate(tmpV)
+    deallocate(V)    
     if (lephot) deallocate(Pmn)
   else
     ! Long device, use RGF
@@ -440,7 +448,8 @@ if (ltrans) then
     deallocate(en)
   endif        
 end if
-
+if (allocated(B)) deallocate(B)
+if (allocated(orb_vac)) deallocate(orb_vac)
 call w90_free_memory
 print *, 'End of program'
 END PROGRAM main
