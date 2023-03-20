@@ -310,6 +310,10 @@ allocate(Itot(nm_dev,nm_dev))
 !
 mu=(/ mus, mud /)
 print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
+print *,'Nkz=',nphiz
+print *,'NEn=',nen
+print *,'ND=',nm_dev
+print *,'dE=',(en(2)-en(1))
 ! build the energy vector for P and W
 dE= En(2)-En(1) 
 nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
@@ -328,9 +332,9 @@ wen(:) = dble(nops(:))*dble(dE)
 print *,'---------------------------------------------------------------'
 print *, ' Encut: intra    inter    Eg (eV)' 
 print '(A6,3F8.3)',' ',encut,egap
-print *, ' Nop='
-print '(10I5)',nops
-print *, ' Eop= (eV)'
+!print *, ' Nop='
+!print '(10I5)',nops
+print *, ' w= (eV)'
 print '(6F8.3)',wen
 print *, '--------------------------------------------------------------'
 !
@@ -356,19 +360,19 @@ do iter=0,niter
   do ikz=1,nphiz
     print *, ' ikz=', ikz
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu=mu,temp=(/temps,tempd/))
-    call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('gw_ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0,-2.0/))
     call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     cur_k(:,:,:,ikz)=cur
-    call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
+    call write_current_spectrum('gw_Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
     sumtot_cur=sumtot_cur+tot_cur
     sumtot_ecur=sumtot_ecur+tot_ecur
   enddo
-  call write_spectrum_summed_over_kz('ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum_summed_over_kz('ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0,-1.0/))
-  call write_current_spectrum_summed_over_kz('Jdens_',iter,cur_k,nen,En,nphiz,length,NB,Lx)
-  call write_current('I',iter,sumtot_cur,length,NB,NS,Lx)
-  call write_current('EI',iter,sumtot_ecur,length,NB,NS,Lx)
+  call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,-2.0/))
+  call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0,-1.0/))
+  call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur_k,nen,En,nphiz,length,NB,Lx)
+  call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
+  call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
   !
   ! empty sigma_x_new matrices for accumulation
   sig_retarded_new=czero
@@ -395,7 +399,7 @@ do iter=0,niter
           ikzd=ikz-iqz + nphiz/2
           if (ikzd<1) ikzd=ikzd+nphiz
           if (ikzd>nphiz) ikzd=ikzd-nphiz
-          !$omp parallel default(none) private(l,h,i) shared(ndiag,P_lesser,P_greater,P_retarded,nm_dev,G_lesser,G_greater,G_retarded,iop,nop,ie,ikz,ikzd)
+          !$omp parallel default(none) private(l,h,i) shared(ndiag,P_lesser,P_greater,P_retarded,nm_dev,G_lesser,G_greater,G_retarded,nop,ie,ikz,ikzd)
           !$omp do
           do i = 1, nm_dev        
               l=max(i-ndiag,1)
@@ -428,7 +432,7 @@ do iter=0,niter
             ikzd=ikz-iqz + nphiz/2            
             if (ikzd<1) ikzd=ikzd+nphiz
             if (ikzd>nphiz) ikzd=ikzd-nphiz
-            !$omp parallel default(none) private(l,h,i,ie) shared(ndiag,nop,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded,ikz,ikzd)  
+            !$omp parallel default(none) private(l,h,i) shared(ndiag,nop,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded,ie,ikz,ikzd)  
             !$omp do
             do i = 1,nm_dev   
               l=max(i-ndiag,1)
@@ -446,6 +450,7 @@ do iter=0,niter
       enddo
     enddo
   enddo  
+  dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)  
   Sig_lesser_new = Sig_lesser_new  * dE
   Sig_greater_new= Sig_greater_new * dE
   Sig_retarded_new=Sig_retarded_new* dE
@@ -481,9 +486,9 @@ do iter=0,niter
       call expand_size_bycopy(Sig_greater(:,:,ie,iqz),nm_dev,NB,2)
     enddo
   enddo
-  call write_spectrum_summed_over_kz('SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-!  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-!  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('gw_SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+!  call write_spectrum_summed_over_kz('gw_SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 end do  
 deallocate(siglead,B)
 deallocate(cur_k,cur,tot_cur,tot_ecur,sumtot_cur,sumtot_ecur)
@@ -1466,9 +1471,9 @@ real(8),parameter::tpi=6.28318530718
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,Sig_greater(:,:,ie),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Sig_lesser(:,:,ie),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev) 
     I(:,:)=I(:,:)+B(:,:)
-    if (present(Ispec)) Ispec(:,:,ie)=B(:,:)
+    if (present(Ispec)) Ispec(:,:,ie)=B(:,:)*spindeg
   enddo
-  I(:,:)=I(:,:)*dble(en(2)-en(1))/tpi
+  I(:,:)=I(:,:)*dble(en(2)-en(1))/tpi*spindeg
   deallocate(B)
 end subroutine calc_collision
 
