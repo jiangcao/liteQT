@@ -1,7 +1,7 @@
 PROGRAM main
 USE wannierHam, only : NB, w90_load_from_file, w90_free_memory,Ly, w90_MAT_DEF, CBM,VBM,eig,w90_MAT_DEF_ribbon_simple, w90_ribbon_add_peierls, w90_MAT_DEF_full_device, invert, Lx,w90_MAT_DEF_dot,w90_dot_add_peierls, w90_bare_coulomb_full_device,kt_CBM,spin_deg,w90_momentum_full_device,w90_bare_coulomb_blocks,Eg
-use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D,green_solve_gw_1D_memsaving
-use green_rgf, only : green_rgf_solve_gw_1d
+use green, only : green_calc_g, green_solve_gw_1D,green_solve_gw_2D,green_solve_ephoton_freespace_1D,green_solve_gw_ephoton_1D,green_solve_gw_1D_memsaving,green_solve_gw_2D_memsaving
+use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac
@@ -142,15 +142,7 @@ if (ltrans) then
       allocate(en(nen))
       allocate(G_retarded(nb*length,nb*length,nen,nkz))
       allocate(G_lesser(nb*length,nb*length,nen,nkz))
-      allocate(G_greater(nb*length,nb*length,nen,nkz))
-      
-      allocate(P_retarded(nb*length,nb*length,nen,nkz))
-      allocate(P_lesser(nb*length,nb*length,nen,nkz))
-      allocate(P_greater(nb*length,nb*length,nen,nkz))
-      
-      allocate(W_retarded(nb*length,nb*length,nen,nkz))
-      allocate(W_lesser(nb*length,nb*length,nen,nkz))
-      allocate(W_greater(nb*length,nb*length,nen,nkz))
+      allocate(G_greater(nb*length,nb*length,nen,nkz))      
       
       allocate(Sig_retarded(nb*length,nb*length,nen,nkz))
       allocate(Sig_lesser(nb*length,nb*length,nen,nkz))
@@ -203,11 +195,16 @@ if (ltrans) then
       end do
       nm_dev=nb*length    
       !
-      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
-        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
-        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+!      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+!        alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
+!        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+!        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+!        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+      call green_solve_gw_2D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
+          G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg)
+    
     else ! 1d case
       print *, 'Build the full device H'
       print *, 'length=',length
@@ -441,8 +438,8 @@ if (ltrans) then
     do i=2,length
       Vii(:,:,i)=Vii(:,:,1)
       V1i(:,:,i)=V1i(:,:,1)
-    enddo
-    call green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,length,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i)
+    enddo    
+    call green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,length,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
     deallocate(Hii,H1i,Vii,V1i)
     deallocate(pot)
     deallocate(en)
