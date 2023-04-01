@@ -26,7 +26,7 @@ real(8), parameter :: e0=1.6022d-19 ! C
 CONTAINS
 
 ! driver for solving the GW and e-photon SCBA together   
-subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   Pmn,polarization,intensity,hw,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
@@ -34,7 +34,7 @@ subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap)
 implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
-real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,Egap
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,Egap,midgap(2)
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
 complex(8), intent(in):: V(nm_dev,nm_dev)
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
@@ -59,7 +59,7 @@ integer::iter,ndiagmin
   do iter=0,niter
     ndiagmin=NB*(min(NS,iter))
     if (ldiag) ndiagmin = 0
-    call green_solve_gw_1D_memsaving(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+    call green_solve_gw_1D_memsaving(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
             alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),&
             Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
@@ -418,7 +418,7 @@ do iter=0,niter
       P_greater=dE*P_greater
       P_retarded=dE*P_retarded
       ! calculate W
-      call green_calc_w(NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+      call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
       !      
       if (lwriteGF) then
         call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
@@ -612,7 +612,7 @@ do iter=0,niter
   !
   do nop=-nopmax+nen/2,nopmax+nen/2   
     do iqz=1,nphiz
-      call green_calc_w(NB,NS,nm_dev,P_retarded(:,:,nop,iqz),P_lesser(:,:,nop,iqz),P_greater(:,:,nop,iqz),V,W_retarded(:,:,nop,iqz),W_lesser(:,:,nop,iqz),W_greater(:,:,nop,iqz))
+      call green_calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iqz),P_lesser(:,:,nop,iqz),P_greater(:,:,nop,iqz),V,W_retarded(:,:,nop,iqz),W_lesser(:,:,nop,iqz),W_greater(:,:,nop,iqz))
     enddo
   enddo
   call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
@@ -708,14 +708,14 @@ end subroutine green_solve_gw_2D
 !   they are computed per energy point, and the contribution to selfenergy is 
 !   immediately added to sigma_x_new matrices, can be extended more easily to 
 !   shared memory parallelization and GPU.
-subroutine green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
+subroutine green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin,writeGF)
 implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 integer, intent(in), optional :: ndiagmin
-real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap
+real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap,midgap(2)
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
 complex(8), intent(in):: V(nm_dev,nm_dev)
 logical,intent(in)::ldiag
@@ -793,9 +793,18 @@ allocate(W_greater(nm_dev,nm_dev))
 allocate(W_retarded(nm_dev,nm_dev)) 
 !
 do iter=0,niter
-  print *,'+ iter=',iter
+  print *,'+ iter=',iter  
   print *, 'calc G'  
   call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,cur=Tr,te=Te,mu=mu,temp=(/temps,tempd/))
+  if (iter == 0) then     
+    call calc_n_electron(G_lesser,G_greater,nen,En,NS,NB,nm_dev,nelec,pelec,midgap)  ! calculate N and P at contacts  
+    print '(a8,f15.4,a8,f15.4)', 'Ns=',nelec(1),'Nd=',nelec(2)
+    print '(a8,f15.4,a8,f15.4)', 'Ps=',pelec(1),'Pd=',pelec(2)
+  else    
+    call calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,(/temps,tempd/),mu,midgap)    
+    mu=(/ mus, mud /) + 0.5*(mu-(/ mus, mud /)) ! move Fermi level at contacts
+    print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
+  end if  
   ! 
   call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
   call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
@@ -859,7 +868,7 @@ do iter=0,niter
     endif
     !
     ! calculate W
-    call green_calc_w(NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
       call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
@@ -1175,37 +1184,45 @@ enddo
 end subroutine expand_size_bycopy
 
 ! calculate number of electrons and holes from G< and G> 
-subroutine calc_n_electron(G_lesser,G_greater,nen,E,NS,NB,nm_dev,nelec,pelec)
+subroutine calc_n_electron(G_lesser,G_greater,nen,E,NS,NB,nm_dev,nelec,pelec,midgap)
 complex(8), intent(in) :: G_lesser(nm_dev,nm_dev,nen)
 complex(8), intent(in) :: G_greater(nm_dev,nm_dev,nen)
-real(8), intent(in)    :: E(nen)
+real(8), intent(in)    :: E(nen),midgap(2)
 integer, intent(in)    :: NS,NB,nm_dev,nen
 real(8), intent(out)   :: nelec(2),pelec(2)
+real(8)::dE
 integer::i,j
 nelec=0.0d0
 pelec=0.0d0
+dE=E(2)-E(1)
 do i=1,nen
   do j=1,NS*NB
-    nelec(1)=nelec(1)+aimag(G_lesser(j,j,i))*(E(2)-E(1))
-    pelec(1)=pelec(1)-aimag(G_greater(j,j,i))*(E(2)-E(1))
+    if (E(i)>midgap(1))then
+      nelec(1)=nelec(1)+aimag(G_lesser(j,j,i))*dE
+    else
+      pelec(1)=pelec(1)-aimag(G_greater(j,j,i))*dE
+    endif
   enddo
 enddo
 do i=1,nen
   do j=nm_dev-NS*NB+1,nm_dev
-    nelec(2)=nelec(2)+aimag(G_lesser(j,j,i)*(E(2)-E(1)))
-    pelec(1)=pelec(1)-aimag(G_greater(j,j,i))*(E(2)-E(1))
+    if (E(i)>midgap(2))then
+      nelec(2)=nelec(2)+aimag(G_lesser(j,j,i))*dE
+    else
+      pelec(2)=pelec(2)-aimag(G_greater(j,j,i))*dE
+    endif
   enddo
 enddo
 end subroutine calc_n_electron
 
 ! determine the quasi-fermi level from the Gr and electron/hole number
-subroutine calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,Temp,mu)
+subroutine calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,Temp,mu,midgap)
 real(8),intent(in)::Temp(2)
 real(8),intent(out)::mu(2)
 complex(8), intent(in) :: G_retarded(nm_dev,nm_dev,nen)
 real(8), intent(in)    :: En(nen)
 integer, intent(in)    :: NS,NB,nm_dev,nen
-real(8), intent(in)    :: nelec(2),pelec(2)
+real(8), intent(in)    :: nelec(2),pelec(2),midgap(2)
 real(8)::dE,n(nen),p(nen),fd,mun,mup
 real(8),allocatable::dos(:),K(:),Q(:),fermi_derivative(:,:)
 REAL(8), PARAMETER  :: BOLTZ=8.61734d-05 !eV K-1
@@ -1233,8 +1250,8 @@ do i=1,2
       enddo
     endif    
     dos(j)=-2.0d0*dos(j)
-    if (j>1) K(j)=K(j-1)+dos(j)*dE    
-    if (j>1) Q(nen-j+1)=Q(nen-j+2)+dos(j)*dE    
+    if ((j>1).and.(En(j)>midgap(i))) K(j)=K(j-1)+dos(j)*dE    
+    if ((j>1).and.(En(nen-j+1)<midgap(i))) Q(nen-j+1)=Q(nen-j+2)+dos(j)*dE    
   enddo
   ! search for the Fermi level
 !  if (dE<(BOLTZ*TEMP(i))) then
@@ -1266,7 +1283,11 @@ do i=1,2
       exit
     endif
   enddo
-  mu(i)=(mun+mup)/2.0d0
+  if (nelec(i)>pelec(i)) then
+    mu(i)=mun
+  else
+    mu(i)=mup
+  endif
 enddo
 deallocate(dos,K)
 end subroutine calc_fermi_level
@@ -2205,9 +2226,9 @@ dLG11=dLG11-(AG-transpose(conjg(AG)))
 end subroutine get_dL_OBC_for_W
 
 
-subroutine green_calc_w(NB,NS,nm_dev,PR,PL,PG,V,WR,WL,WG)
+subroutine green_calc_w(NBC,NB,NS,nm_dev,PR,PL,PG,V,WR,WL,WG)
 implicit none
-integer,intent(in)::nm_dev,NB,NS
+integer,intent(in)::nm_dev,NB,NS,NBC
 complex(8),intent(in),dimension(nm_dev,nm_dev)::PR,PL,PG,V
 complex(8),intent(out),dimension(nm_dev,nm_dev)::WR,WL,WG
 ! ---------
@@ -2218,9 +2239,8 @@ complex(8),dimension(:,:),allocatable::VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,&
     MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N
 complex(8),dimension(:,:),allocatable::dM11,xR11,dLL11,dLG11,dV11
 complex(8),dimension(:,:),allocatable::dMnn,xRnn,dLLnn,dLGnn,dVnn
-integer::i,NL,NR,NT,LBsize,RBsize,NBC
+integer::i,NL,NR,NT,LBsize,RBsize
 real(8)::condL,condR
-NBC=2
 NL=NB*NS ! left contact block size
 NR=NB*NS ! right contact block size
 NT=nm_dev! total size

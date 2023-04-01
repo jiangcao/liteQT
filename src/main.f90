@@ -26,7 +26,7 @@ real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2)
-real(8) :: intensity,hw
+real(8) :: intensity,hw,midgap(2)
 num_vac=0 ! number of vacancies
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -194,6 +194,9 @@ if (ltrans) then
           H00ld(ib,ib,2,:)=H00ld(ib,ib,2,:)+pot(length)
       end do
       nm_dev=nb*length    
+      
+      midgap=(/ (CBM+VBM)/2.0d0,(CBM+VBM)/2.0d0 /)
+      midgap= midgap + (/ pot(1), pot(length)/)
       !
 !      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
 !        alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
@@ -223,6 +226,31 @@ if (ltrans) then
       T = dcmplx(0.0d0,0.0d0)
       T(1:nb*ns,1:nb*ns,1,1) = H10ld(:,:,1,1)
       T(1:nb*ns,nb*(length-ns)+1:nb*length,2,1) = H10ld(:,:,2,1)      
+      ! write bands into ek.dat        
+      open(unit=11,file='ek.dat',status='unknown')
+      allocate(phix(nkx))
+      allocate(ek(nb*ns,nkx))
+      allocate(H01(nb*ns,nb*ns))
+      allocate(H00(nb*ns,nb*ns))
+      phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
+      ikz=1
+      do i=1,nkx
+          H00(:,:) = H00ld(:,:,1,ikz)            
+          H01(:,:) = transpose(H10ld(:,:,1,ikz))
+          H01(:,:) = conjg(H01(:,:))
+          H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H10ld(:,:,1,ikz)
+          H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*H01               
+          ek(:,i) = eig(NB*NS,H00)
+      end do    
+      deallocate(H00,H01)    
+      do j=1,nb*NS
+          do i=1,nkx
+              write(11,'(3E18.8)') phix(i), ek(j,i)
+          end do
+          write(11,*)
+      end do            
+      deallocate(ek,phix)
+      close(11)
       pot(:) = 0.0d0
       if (lreadpot) then
           open(unit=10,file='pot_dat',status='unknown')
@@ -308,6 +336,9 @@ if (ltrans) then
           H00ld(ib,ib,2,1)=H00ld(ib,ib,2,1)+pot(length)
       end do
       nm_dev=nb*length  
+      
+      midgap=(/ (CBM+VBM)/2.0d0,(CBM+VBM)/2.0d0 /)
+      midgap= midgap + (/ pot(1), pot(length)/)
       !  
       ! momentum operator   
       allocate(Pmn(nb*length,nb*length,3,1))
@@ -343,7 +374,7 @@ if (ltrans) then
       if (lephot) then
       
         if (.not. lnogw) then
-          call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap(2),&
               alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
               Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
@@ -366,7 +397,7 @@ if (ltrans) then
         !    W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
         !    Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
             
-          call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
             alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
             G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
             Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg,writeGF=.false.)
