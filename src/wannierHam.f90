@@ -832,7 +832,7 @@ character(len=*),intent(in)::method
 integer::io,jo,ix,iy,mx,my,mo
 real(8)::r(3)
 complex(8)::pre_fact
-if (not(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV]
+if (.not.(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny)) ! [eV]
 pre_fact=1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar*1.0d2 * c0  ! multiply light-speed so c0*pmn in energy eV 
 select case (method)
   case ('approx')

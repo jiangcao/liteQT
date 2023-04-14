@@ -2,7 +2,6 @@
 !!!!!!!!!!!!!!!! DATE: 11/2022
 
 module green
-use OMP_LIB
 
 implicit none 
 
@@ -65,7 +64,7 @@ integer::iter,ndiagmin
             Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),ldiag,encut,Egap,ndiagmin=ndiagmin)
     call green_solve_ephoton_freespace_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
-            0.0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
+            0.0d0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
             Pmn(:,:,:),polarization,intensity,hw,&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:))       
@@ -73,9 +72,9 @@ integer::iter,ndiagmin
     Sig_retarded = Sig_retarded+ Sig_retarded_new 
     Sig_lesser  = Sig_lesser+ Sig_lesser_new 
     Sig_greater = Sig_greater+ Sig_greater_new 
-    call write_spectrum('gw_eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-    !call write_spectrum('gw_eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    !call write_spectrum('gw_eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call write_spectrum('gw_eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+    !call write_spectrum('gw_eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+    !call write_spectrum('gw_eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('gw_eph_Jdens',iter,cur,nen,en,length,NB,Lx)
     call write_current('gw_eph_I',iter,tot_cur,length,NB,1,Lx)
@@ -151,9 +150,9 @@ real(8)::Nphot,mu(2)
     call write_current_spectrum('eph_Jdens',iter,cur,nen,en,length,NB,Lx)
     call write_current('eph_I',iter,tot_cur,length,NB,1,Lx)
     call write_current('eph_EI',iter,tot_ecur,length,NB,1,Lx)
-    call write_spectrum('eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-    call write_spectrum('eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-    call write_spectrum('eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+    call write_spectrum('eph_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+    call write_spectrum('eph_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum('eph_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
     !
     print *, 'calc Sig'
     call calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
@@ -172,7 +171,7 @@ real(8)::Nphot,mu(2)
 !    call write_spectrum('SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
     ! calculate collision integral
     call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-    call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+    call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
   enddo
   deallocate(M,siglead)
   deallocate(cur,tot_cur,tot_ecur)
@@ -222,10 +221,11 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
 end subroutine calc_sigma_ephoton_monochromatic
 
 ! calculate e-photon self-energies in spontaneous emission and ADD onto the Sig_r<>
-subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
+subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,prefactor,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
 implicit none
 integer,intent(in)::nm_dev,length,nen,nop
 real(8),intent(in)::en(nen)
+complex(8),intent(in)::prefactor
 complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
 complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_lesser,G_greater
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen)::Sig_retarded,Sig_lesser,Sig_greater
@@ -233,7 +233,7 @@ complex(8),intent(inout),dimension(nm_dev,nm_dev,nen)::Sig_retarded,Sig_lesser,S
 integer::ie
 complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix  
   ! Sig^<>(E) = M G^<>(E +- hw) M  
-  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M)
+  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Sig_lesser,Sig_greater,M,prefactor)
   allocate(B(nm_dev,nm_dev))
   allocate(A(nm_dev,nm_dev))  
   !$omp do
@@ -242,13 +242,13 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
     if (ie+nop<=nen) then 
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_lesser(:,:,ie+nop),nm_dev,czero,B,nm_dev) 
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
-      Sig_lesser(:,:,ie) =Sig_lesser(:,:,ie)+ A(:,:)
+      Sig_lesser(:,:,ie) =Sig_lesser(:,:,ie)+ A(:,:) * prefactor
     endif    
     ! Sig^>(E)    
     if (ie-nop>=1) then 
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_greater(:,:,ie-nop),nm_dev,czero,B,nm_dev) 
       call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev)     
-      Sig_greater(:,:,ie) =Sig_greater(:,:,ie)+ A(:,:)   
+      Sig_greater(:,:,ie) =Sig_greater(:,:,ie)+ A(:,:) * prefactor   
     endif
   enddo  
   !$omp end do
@@ -360,16 +360,16 @@ do iter=0,niter
   do ikz=1,nphiz
     print *, ' ikz=', ikz
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu=mu,temp=(/temps,tempd/))
-    call write_spectrum('gw_ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('gw_ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
     call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     cur_k(:,:,:,ikz)=cur
     call write_current_spectrum('gw_Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
     sumtot_cur=sumtot_cur+tot_cur
     sumtot_ecur=sumtot_ecur+tot_ecur
   enddo
-  call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0,-1.0/))
+  call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
   call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur_k,nen,En,nphiz,length,NB,Lx)
   call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
   call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
@@ -418,10 +418,10 @@ do iter=0,niter
       P_greater=dE*P_greater
       P_retarded=dE*P_retarded
       ! calculate W
-      call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+      call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
       !      
       if (lwriteGF) then
-        call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+        call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
       endif
       !
       ! Accumulate the GW to Sigma
@@ -486,7 +486,7 @@ do iter=0,niter
       call expand_size_bycopy(Sig_greater(:,:,ie,iqz),nm_dev,NB,2)
     enddo
   enddo
-  call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('gw_SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('gw_SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 end do  
@@ -554,16 +554,16 @@ do iter=0,niter
   do ikz=1,nphiz
     print *, ' ikz=', ikz
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham(:,:,ikz),H00lead(:,:,:,ikz),H10lead(:,:,:,ikz),Siglead(:,:,:,:,ikz),T(:,:,:,ikz),Sig_retarded(:,:,:,ikz),Sig_lesser(:,:,:,ikz),Sig_greater(:,:,:,ikz),G_retarded(:,:,:,ikz),G_lesser(:,:,:,ikz),G_greater(:,:,:,ikz),mu=mu,temp=(/temps,tempd/))
-    call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0,-2.0/))
+    call write_spectrum('ldos_kz'//string(ikz)//'_',iter,G_retarded(:,:,:,ikz),nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
     call calc_bond_current(Ham(:,:,ikz),G_lesser(:,:,:,ikz),nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     cur_k(:,:,:,ikz)=cur
     call write_current_spectrum('Jdens_kz'//string(ikz)//'_',iter,cur,nen,en,length,NB,Lx)    
     sumtot_cur=sumtot_cur+tot_cur
     sumtot_ecur=sumtot_ecur+tot_ecur
   enddo
-  call write_spectrum_summed_over_kz('ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum_summed_over_kz('ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_summed_over_kz('pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0,-1.0/))
+  call write_spectrum_summed_over_kz('ldos',iter,G_retarded,nen,En,nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum_summed_over_kz('ndos',iter,G_lesser,nen,En,nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum_summed_over_kz('pdos',iter,G_greater,nen,En,nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
   call write_current_spectrum_summed_over_kz('Jdens_',iter,cur_k,nen,En,nphiz,length,NB,Lx)
   call write_current('I',iter,sumtot_cur,length,NB,NS,Lx)
   call write_current('EI',iter,sumtot_ecur,length,NB,NS,Lx)
@@ -604,7 +604,7 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
-  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
@@ -612,10 +612,10 @@ do iter=0,niter
   !
   do nop=-nopmax+nen/2,nopmax+nen/2   
     do iqz=1,nphiz
-      call green_calc_w(1,NB,NS,nm_dev,P_retarded(:,:,nop,iqz),P_lesser(:,:,nop,iqz),P_greater(:,:,nop,iqz),V,W_retarded(:,:,nop,iqz),W_lesser(:,:,nop,iqz),W_greater(:,:,nop,iqz))
+      call green_calc_w(2,NB,NS,nm_dev,P_retarded(:,:,nop,iqz),P_lesser(:,:,nop,iqz),P_greater(:,:,nop,iqz),V,W_retarded(:,:,nop,iqz),W_lesser(:,:,nop,iqz),W_greater(:,:,nop,iqz))
     enddo
   enddo
-  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('WR',iter,W_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('WL',iter,W_lesser,  nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('WG',iter,W_greater, nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
   !
@@ -692,7 +692,7 @@ do iter=0,niter
       call expand_size_bycopy(Sig_greater(:,:,ie,iqz),nm_dev,NB,2)
     enddo
   enddo
-  call write_spectrum_summed_over_kz('SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_summed_over_kz('SigR',iter,Sig_retarded,nen,En,nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiz,length,NB,Lx,(/1.0,1.0/))
 end do  
@@ -700,6 +700,465 @@ deallocate(siglead,B)
 deallocate(cur_k,cur,tot_cur,tot_ecur,sumtot_cur,sumtot_ecur)
 deallocate(Ispec,Itot)
 end subroutine green_solve_gw_2D
+
+
+
+!! driver for iterating G -> P -> W -> Sig 
+!! super memory saving version of green_solve_gw_1D , only keeping the diagonal
+!! blocks of size (NBxNB) of G and Sigma in memory
+!subroutine green_solve_gw_1D_supermemsaving(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
+!  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
+!  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+!  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin,writeGF)
+!implicit none
+!integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
+!integer, intent(in), optional :: ndiagmin
+!real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap,midgap(2)
+!complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
+!complex(8), intent(in):: V(nm_dev,nm_dev)
+!logical,intent(in)::ldiag
+!real(8),intent(in)::encut(2) ! intraband and interband cutoff for P
+!complex(8),intent(inout),dimension(NB,NB,length,nen) ::  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+!logical, intent(in), optional :: writeGF 
+!!----
+!complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
+!complex(8),allocatable,dimension(:,:):: B ! tmp matrix
+!real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
+!real(8),allocatable::wen(:) ! energy vector for P and W
+!integer,allocatable::nops(:) ! discretized energy for P and W
+!real(8),allocatable::Tr(:,:) ! current spectrum on leads
+!real(8),allocatable::Te(:,:,:) ! transmission matrix spectrum 
+!integer :: iter,ie,iop,nnop,nnop1,nnop2
+!integer :: i,j,nm,l,h,ndiag,nop,ix
+!logical :: lwriteGF
+!complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
+!complex(8),allocatable,dimension(:,:) ::  P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater
+!complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
+!complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+!REAL(8), PARAMETER :: pi = 3.14159265359d0
+!complex(8) :: dE
+!real(8)::nelec(2),mu(2),pelec(2)
+!if (present(writeGF)) then
+!  lwriteGF=writeGF
+!else
+!  lwriteGF=.false.
+!endif
+!print *,'================= green_solve_gw_1D_supermemsaving ================='
+!mu=(/ mus, mud /)
+!print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
+!! build the energy vector for P and W
+!dE= En(2)-En(1) 
+!nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
+!nnop2=floor((encut(2) - Egap)/dble(dE))  ! interband , include Egap
+!nnop=nnop1*2-1+nnop2*2 ! + and - freq.
+!allocate(nops(nnop))
+!allocate(wen(nnop))
+!do iop=1,nnop1*2-1
+!  nops(iop+nnop2) = iop - nnop1    
+!enddo
+!do iop=1,nnop2
+!  nops(nnop2+1-iop) = -iop+1 - floor(Egap/dble(dE))
+!  nops(nnop2+nnop1*2-1+iop) = -nops(nnop2+1-iop)
+!enddo
+!wen(:) = dble(nops(:))*dble(dE)
+!print *,'---------------------------------------------------------------'
+!print *, ' Encut: intra    inter    Eg (eV)' 
+!print '(A6,3F8.3)',' ',encut,egap
+!print *, ' Nop='
+!print '(10I5)',nops
+!print *, ' Eop= (eV)'
+!print '(6F8.3)',wen
+!print *, '--------------------------------------------------------------'
+!!
+!allocate(siglead(NB*NS,NB*NS,nen,2))
+!siglead=0.0d0
+!! get leads sigma
+!do ie=1,nen
+!  do i=1,NS
+!    l=(i-1)*NB+1
+!    h=i*NB
+!    siglead(l:h,l:h,ie,1) = Sig_retarded(:,:,i,ie)
+!    siglead(l:h,l:h,ie,2) = Sig_retarded(:,:,length-NS+i,ie)    
+!  enddo
+!enddo
+!!
+!allocate(B(nm_dev,nm_dev))
+!allocate(tot_cur(nm_dev,nm_dev))
+!allocate(tot_ecur(nm_dev,nm_dev))
+!allocate(cur(nm_dev,nm_dev,nen))
+!allocate(Ispec(nm_dev,nm_dev,nen))
+!allocate(Itot(nm_dev,nm_dev))
+!allocate(tr(nen,2))
+!allocate(te(nen,2,2))
+!!
+!allocate(P_lesser(nm_dev,nm_dev))
+!allocate(P_greater(nm_dev,nm_dev))
+!allocate(P_retarded(nm_dev,nm_dev)) 
+!allocate(W_lesser(nm_dev,nm_dev))
+!allocate(W_greater(nm_dev,nm_dev))
+!allocate(W_retarded(nm_dev,nm_dev)) 
+!!
+!do iter=0,niter
+!  print *,'+ iter=',iter  
+!  print *, 'calc G'  
+!  call green_calc_g_block(nen,En,2,nm_dev,nb,length,(/nb*ns,nb*ns/),nb*ns,spindeg,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,cur,tot_cur,tot_ecur,Itot,Ispec,cur=Tr,te=Te,mu=mu,temp=(/temps,tempd/)) 
+!  ! 
+!  call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
+!  call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
+!  call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
+!  call write_spectrum_block('gw_ldos',iter,G_retarded,nen,En,length,NB,NS,Lx,(/1.0,-2.0/))
+!  call write_spectrum_block('gw_ndos',iter,G_lesser,nen,En,length,NB,NS,Lx,(/1.0,1.0/))
+!  call write_spectrum_block('gw_pdos',iter,G_greater,nen,En,length,NB,NS,Lx,(/1.0,-1.0/))
+!  call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
+!  call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
+!  call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
+!  call write_transmission_spectrum('gw_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)
+!  G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
+!  G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
+!  G_greater=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
+!  !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+!  if (lwriteGF) then
+! !   call write_matrix_E('G_r',0,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+!    !call write_matrix_E('G_l',0,G_lesser,nen,en,length,NB,(/1.0,1.0/))
+!    !call write_matrix_E('G_g',0,G_greater,nen,en,length,NB,(/1.0,1.0/))
+!  endif
+!  !        
+!  ! empty sigma_x_new matrices for accumulation
+!  sig_retarded_new=czero
+!  sig_lesser_new=czero
+!  sig_greater_new=czero
+!  print *, 'calc P, solve W, add to Sigma_new'     
+!  ndiag=NB*(min(NS,iter))
+!  if (ldiag) ndiag=0  
+!  if (present(ndiagmin)) ndiag=max(ndiagmin,ndiag)
+!  if (lwriteGF) ndiag=nm_dev
+!  print *,'ndiag=',min(ndiag,nm_dev)
+!  !
+!  print *,'   i / n :  Nop   Eop (eV)'
+!  do iop=1,nnop        
+!    print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
+!    nop=nops(iop)
+!    P_lesser = czero
+!    P_greater = czero
+!    P_retarded = czero
+!    !$omp parallel default(none) private(ix,l,h,i,ie) shared(length,NB,NS,ndiag,nop,nen,P_lesser,P_greater,P_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
+!    !$omp do
+!    do ix=1,length
+!      do i = 1, NB        
+!        do ie = max(nop+1,1),min(nen,nen+nop)                   
+!          l=max(i-ndiag,1)
+!          h=min(NB,i+ndiag)                            
+!          P_lesser(i+(ix-1)*NB,l:h) = P_lesser(i+(ix-1)*NB,l:h) + G_lesser(i,l:h,ix,ie) * G_greater(l:h,i,ix,ie-nop)
+!          P_greater(i+(ix-1)*NB,l:h) = P_greater(i+(ix-1)*NB,l:h) + G_greater(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop) 
+!          P_retarded(i+(ix-1)*NB,l:h) = P_retarded(i+(ix-1)*NB,l:h) + G_lesser(i,l:h,ix,ie) * conjg(G_retarded(i,l:h,ix,ie-nop)) +&
+!                    & G_retarded(i,l:h,ix,ie) * G_lesser(l:h,i,ix,ie-nop)        
+!        enddo
+!      enddo    
+!    enddo
+!    !$omp end do
+!    !$omp end parallel
+!    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )* spindeg    
+!    P_lesser=P_lesser*dE
+!    P_greater=P_greater*dE  
+!    P_retarded=P_retarded*dE
+!    if (lwriteGF) then
+!      call write_matrix('P_r',0,P_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+!    endif
+!    !
+!    ! calculate W
+!    call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+!    !
+!    if (lwriteGF) then
+!      call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+!    endif
+!    !
+!    ! Accumulate the GW to Sigma
+!    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)  
+!    !$omp parallel default(none) private(ix,l,h,i,ie) shared(NB,NS,length,ndiag,nop,nen,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nm_dev,G_lesser,G_greater,G_retarded)  
+!    !$omp do
+!    do ix=1,length
+!      do i=1,NB
+!        l=max(i-ndiag,1)
+!        h=min(NB,i+ndiag)           
+!        do ie=1,nen
+!          if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
+!            Sig_lesser_new(i,l:h,ix,ie)=Sig_lesser_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_lesser(i,l:h)
+!            Sig_greater_new(i,l:h,ix,ie)=Sig_greater_new(i,l:h,ix,ie)+G_greater(i,l:h,ix,ie-nop)*W_greater(i,l:h)
+!            Sig_retarded_new(i,l:h,ix,ie)=Sig_retarded_new(i,l:h,ix,ie)+G_lesser(i,l:h,ix,ie-nop)*W_retarded(i,l:h) + &
+!                                       G_retarded(i,l:h,ix,ie-nop)*W_lesser(i,l:h) + &
+!                                       G_retarded(i,l:h,ix,ie-nop)*W_retarded(i,l:h)          
+!          endif     
+!        enddo   
+!      enddo
+!    enddo
+!    !$omp end do
+!    !$omp end parallel    
+!  enddo                                
+!  !
+!  dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)                
+!  Sig_lesser_new = Sig_lesser_new  * dE
+!  Sig_greater_new= Sig_greater_new * dE
+!  Sig_retarded_new=Sig_retarded_new* dE
+!  !
+!  Sig_retarded_new = dcmplx( dble(Sig_retarded_new), aimag(Sig_greater_new-Sig_lesser_new)/2.0d0 )
+!  ! symmetrize the selfenergies
+!  do ie=1,nen
+!    do ix=1,length      
+!      Sig_retarded_new(:,:,ix,ie) = (Sig_retarded_new(:,:,ix,ie) + transpose(Sig_retarded_new(:,:,ix,ie)))/2.0d0          
+!      Sig_lesser_new(:,:,ix,ie) = (Sig_lesser_new(:,:,ix,ie) + transpose(Sig_lesser_new(:,:,ix,ie)))/2.0d0      
+!      Sig_greater_new(:,:,ix,ie) = (Sig_greater_new(:,:,ix,ie) + transpose(Sig_greater_new(:,:,ix,ie)))/2.0d0
+!    enddo
+!  enddo
+!  !!!Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), aimag(Sig_lesser_new) )
+!  !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
+!  !
+!  if (lwriteGF) then
+!!    call write_matrix_E('Sigma_r',0,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
+!    !call write_matrix_E('Sigma_l',0,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
+!    !call write_matrix_E('Sigma_g',0,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
+!  endif
+!  ! mixing with the previous one
+!  Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
+!  Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
+!  Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)    
+!  ! make sure self-energy is continuous near leads (by copying edge block)
+!  do ie=1,nen
+!    do ix=1,2
+!      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,3,ie)
+!      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,3,ie)
+!      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,3,ie)
+!    enddo
+!    do ix=length-1,length
+!      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,length-2,ie)
+!      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,length-2,ie)
+!      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,length-2,ie)
+!    enddo
+!  enddo
+!  ! get leads sigma
+!  do i=1,NS
+!    l=(i-1)*NB+1
+!    h=i*NB
+!    siglead(l:h,l:h,:,1) = Sig_retarded(:,:,i,:)
+!    siglead(l:h,l:h,:,2) = Sig_retarded(:,:,length-NS+i,:)    
+!  enddo
+!  !
+!!  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
+!!  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
+!!  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+!  !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
+!  call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+!enddo                
+!deallocate(siglead)
+!deallocate(B,cur,tot_cur,tot_ecur)
+!deallocate(Ispec,Itot,Tr,Te)
+!deallocate(P_retarded,P_lesser,P_greater)
+!deallocate(W_retarded,W_lesser,W_greater)
+!deallocate(wen,nops)
+!end subroutine green_solve_gw_1D_supermemsaving
+
+
+subroutine block2full(A,fullA,NB,length)
+implicit none
+complex(8),intent(in)::A(NB,NB,length)
+complex(8),intent(out)::fullA(NB*length,NB*length)
+integer,intent(in)::NB,length
+integer::i,l,h
+fullA=0.0d0
+do i=1,length
+  l=(i-1)*NB+1
+  h=i*NB
+  fullA(l:h,l:h)=A(:,:,i)
+enddo
+end subroutine block2full
+
+
+subroutine full2block(fullA,A,NB,length)
+implicit none
+complex(8),intent(in)::fullA(NB*length,NB*length)
+complex(8),intent(out)::A(NB,NB,length)
+integer,intent(in)::NB,length
+integer::i,l,h
+A=0.0d0
+do i=1,length
+  l=(i-1)*NB+1
+  h=i*NB
+  A(:,:,i)=fullA(l:h,l:h)
+enddo
+end subroutine full2block
+
+
+!! calculate Gr and optionally G<>
+!subroutine green_calc_g_block(ne,E,num_lead,nm_dev,NB,NX,nm_lead,max_nm_lead,spindeg,Ham,H00,H10,Siglead,T,Scat_Sig_retarded_diag,Scat_Sig_lesser_diag,Scat_Sig_greater_diag,G_retarded_diag,G_lesser_diag,G_greater_diag,jdens,tot_cur,tot_ecur,Itot,Ispec,cur,te,mu,temp,mode)
+!implicit none
+!integer, intent(in) :: num_lead ! number of leads/contacts
+!integer, intent(in) :: nm_dev   ! size of device Hamiltonian
+!integer, intent(in) :: nm_lead(num_lead) ! size of lead Hamiltonians
+!integer, intent(in) :: max_nm_lead ! max size of lead Hamiltonians
+!integer, intent(in) :: NB, NX
+!real(8), intent(in) :: E(ne)  ! energy vector
+!real(8), intent(in) :: spindeg 
+!real(8), intent(out),optional :: cur(ne,num_lead)  ! current spectrum on leads
+!real(8), intent(out),optional :: te(ne,num_lead,num_lead)  ! transmission matrix
+!integer, intent(in) :: ne
+!complex(8), intent(in) :: Ham(nm_dev,nm_dev)
+!complex(8), intent(in) :: H00(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian diagonal blocks
+!complex(8), intent(in) :: H10(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian off-diagonal blocks
+!complex(8), intent(in) :: Siglead(max_nm_lead,max_nm_lead,ne,num_lead) ! lead sigma_r scattering
+!complex(8), intent(in) :: T(max_nm_lead,nm_dev,num_lead)  ! coupling matrix between leads and device
+!complex(8), intent(in) :: Scat_Sig_retarded_diag(NB,NB,NX,ne) ! scattering Selfenergy
+!complex(8), intent(in) :: Scat_Sig_lesser_diag(NB,NB,NX,ne)
+!complex(8), intent(in) :: Scat_Sig_greater_diag(NB,NB,NX,ne)
+!complex(8), intent(inout) :: G_retarded_diag(NB,NB,NX,ne)
+!complex(8), intent(inout) :: G_lesser_diag(NB,NB,NX,ne)
+!complex(8), intent(inout) :: G_greater_diag(NB,NB,NX,ne)
+!real(8),intent(out)::jdens(nm_dev,nm_dev,ne),tot_cur(nm_dev,nm_dev),tot_ecur(nm_dev,nm_dev)
+!complex(8),intent(out)::Ispec(nm_dev,nm_dev,ne),Itot(nm_dev,nm_dev)
+!real(8), intent(in), optional :: mu(num_lead), temp(num_lead)
+!character(len=*),intent(in), optional :: mode
+!integer :: i,j,nm,ie,io
+!complex(8), allocatable, dimension(:,:) :: S00,G00,GBB,A,sig,sig_lesser,sig_greater,B,C
+!complex(8), allocatable, dimension(:,:,:) :: gamma_lead
+!complex(8), allocatable, dimension(:,:) :: Scat_Sig_retarded,Scat_Sig_lesser,Scat_Sig_greater
+!complex(8), allocatable, dimension(:,:) :: G_retarded,G_lesser,G_greater
+!complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
+!complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+!REAL(8), PARAMETER  :: BOLTZ=8.61734d-05 !eV K-1
+!real(8) :: fd, dE
+!logical :: solve_Gr
+!dE=E(2)-E(1)
+!allocate(Scat_Sig_lesser(nm_dev,nm_dev))
+!allocate(Scat_Sig_greater(nm_dev,nm_dev))
+!allocate(Scat_Sig_retarded(nm_dev,nm_dev)) 
+!allocate(G_lesser(nm_dev,nm_dev))
+!allocate(G_greater(nm_dev,nm_dev))
+!allocate(G_retarded(nm_dev,nm_dev)) 
+!!
+!allocate(sig(nm_dev,nm_dev))  
+!jdens=0.0d0
+!tot_cur=0.0d0
+!tot_ecur=0.0d0
+!Itot=0.0d0
+!solve_Gr = .true.
+!if (present(mode).and.(mode=='use_gr')) then
+!  solve_Gr = .false.
+!endif
+!if (present(cur)) then
+!  cur=0.0d0
+!endif
+!if (present(te)) then
+!  te=0.0d0
+!endif
+!if ((present(cur)).or.(present(te))) then
+! allocate(gamma_lead(nm_dev,nm_dev,num_lead))  
+!endif
+!do ie = 1, ne
+!  if (mod(ie,max(ne/10,1))==0) print '(I5,A,I5)',ie,'/',ne
+!  call block2full(Scat_Sig_lesser_diag(:,:,:,ie),Scat_Sig_lesser,NB,NX)
+!  call block2full(Scat_Sig_greater_diag(:,:,:,ie),Scat_Sig_greater,NB,NX)
+!  call block2full(Scat_Sig_retarded_diag(:,:,:,ie),Scat_Sig_retarded,NB,NX)
+!  if (.not. solve_Gr) then 
+!    call block2full(G_retarded_diag(:,:,:,ie),G_retarded,NB,NX)
+!  else
+!    G_retarded(:,:) = - Ham(:,:) - Scat_Sig_retarded(:,:) 
+!  endif
+!  if (ie .eq. 1) then
+!    allocate(sig_lesser(nm_dev,nm_dev))
+!    allocate(sig_greater(nm_dev,nm_dev))          
+!    allocate(B(nm_dev,nm_dev))
+!    allocate(C(nm_dev,nm_dev))
+!  end if
+!  sig_lesser(:,:) = dcmplx(0.0d0,0.0d0)      
+!  sig_greater(:,:) = dcmplx(0.0d0,0.0d0)      
+!  ! compute and add contact self-energies    
+!!  open(unit=101,file='sancho_gbb.dat',status='unknown',position='append')
+!!  open(unit=102,file='sancho_g00.dat',status='unknown',position='append')
+!!  open(unit=103,file='sancho_sig.dat',status='unknown',position='append')
+!  do i = 1,num_lead
+!    NM = nm_lead(i)    
+!    allocate(S00(nm,nm))
+!    allocate(G00(nm,nm))
+!    allocate(GBB(nm,nm))
+!    allocate(A(nm_dev,nm))    
+!    call identity(S00,nm)
+!    call sancho(NM,E(ie),S00,H00(1:nm,1:nm,i)+siglead(1:nm,1:nm,ie,i),H10(1:nm,1:nm,i),G00,GBB)
+!    call zgemm('c','n',nm_dev,nm,nm,cone,T(1:nm,1:nm_dev,i),nm,G00,nm,czero,A,nm_dev) 
+!    call zgemm('n','n',nm_dev,nm_dev,nm,cone,A,nm_dev,T(1:nm,1:nm_dev,i),nm,czero,sig,nm_dev)  
+!!    write(101,'(i4,2E15.4)') i, E(ie), -aimag(trace(GBB,nm))*2.0d0
+!!    write(102,'(i4,2E15.4)') i, E(ie), -aimag(trace(G00,nm))*2.0d0
+!!    write(103,'(i4,2E15.4)') i, E(ie), -aimag(trace(sig,nm_dev))*2.0d0
+!    if (solve_Gr) G_retarded(:,:) = G_retarded(:,:) - sig(:,:)
+!    fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
+!    B(:,:) = conjg(sig(:,:))
+!    C(:,:) = transpose(B(:,:))
+!    B(:,:) = sig(:,:) - C(:,:)
+!    sig_lesser(:,:) = sig_lesser(:,:) - B(:,:)*fd	        
+!    sig_greater(:,:) = sig_greater(:,:) + B(:,:)*(1.0d0-fd)	 
+!    if ((present(te)).or.(present(cur))) then
+!      gamma_lead(:,:,i)= B(:,:) 
+!    endif       
+!    deallocate(S00,G00,GBB,A)
+!  end do  
+!!  close(101)
+!!  close(102)
+!!  close(103)
+!  if (solve_Gr) then
+!    do i = 1,nm_dev
+!      G_retarded(i,i) = G_retarded(i,i) + dcmplx(E(ie),0.0d0)
+!    end do
+!    !
+!    call invert(G_retarded,nm_dev) 
+!    !
+!    call full2block(G_retarded,G_retarded_diag(:,:,:,ie),NB,NX)
+!  endif
+!  sig_lesser = sig_lesser + Scat_Sig_lesser
+!  sig_greater = sig_greater + Scat_Sig_greater     
+!  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_lesser,nm_dev,czero,B,nm_dev) 
+!  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
+!  G_lesser = C
+!  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_greater,nm_dev,czero,B,nm_dev) 
+!  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
+!  G_greater = C      
+!  call full2block(G_lesser,G_lesser_diag(:,:,:,ie),NB,NX)
+!  call full2block(G_greater,G_greater_diag(:,:,:,ie),NB,NX)
+!  !
+!  call calc_bond_current(Ham,G_lesser,1,dE,spindeg,nm_dev,tot_cur(:,:),tot_ecur(:,:),jdens(:,:,ie),accu=.true.)
+!  call calc_collision(Scat_Sig_lesser,Scat_Sig_greater,G_lesser,G_greater,1,dE,spindeg,nm_dev,Itot,Ispec(:,:,ie),accu=.true.)
+!  !
+!  if ((present(cur)).or.(present(te))) then
+!    ! calculate current spec and/or transmission at each lead/contact
+!    do i=1,num_lead                      
+!      if (present(cur)) then
+!        fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
+!        call zgemm('n','n',nm_dev,nm_dev,nm_dev,(1.0d0-fd),gamma_lead(:,:,i),nm_dev,G_lesser,nm_dev,czero,B,nm_dev)
+!        call zgemm('n','n',nm_dev,nm_dev,nm_dev,fd,gamma_lead(:,:,i),nm_dev,G_greater,nm_dev,cone,B,nm_dev)
+!        do io=1,nm_dev
+!          cur(ie,i)=cur(ie,i)+ dble(B(io,io))
+!        enddo
+!      endif        
+!      if (present(te)) then
+!        do j=1,num_lead                      
+!          if (j.ne.i) then
+!            call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,gamma_lead(:,:,i),nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
+!            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,gamma_lead(:,:,j),nm_dev,czero,C,nm_dev)
+!            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,C,nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
+!            do io=1,nm_dev
+!              te(ie,i,j)=te(ie,i,j)- dble(B(io,io)) ! Gamma = i[Sig^r - Sig^r \dagger] , hence the -1
+!            enddo
+!          endif
+!        enddo
+!      endif
+!    enddo
+!  endif
+!end do  
+!deallocate(sig)
+!deallocate(Scat_Sig_retarded,Scat_Sig_greater,Scat_Sig_lesser)
+!deallocate(G_retarded,G_lesser,G_greater)
+!deallocate(B,C,sig_lesser,sig_greater)
+!if ((present(cur)).or.(present(te))) then
+! deallocate(gamma_lead)
+!endif
+!end subroutine green_calc_g_block
+
 
 
 ! driver for iterating G -> P -> W -> Sig 
@@ -796,23 +1255,23 @@ do iter=0,niter
   print *,'+ iter=',iter  
   print *, 'calc G'  
   call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,Ham,H00lead,H10lead,Siglead,T,Sig_retarded,Sig_lesser,Sig_greater,G_retarded,G_lesser,G_greater,cur=Tr,te=Te,mu=mu,temp=(/temps,tempd/))
-  if (iter == 0) then     
-    call calc_n_electron(G_lesser,G_greater,nen,En,NS,NB,nm_dev,nelec,pelec,midgap)  ! calculate N and P at contacts  
-    print '(a8,f15.4,a8,f15.4)', 'Ns=',nelec(1),'Nd=',nelec(2)
-    print '(a8,f15.4,a8,f15.4)', 'Ps=',pelec(1),'Pd=',pelec(2)
-  else    
-    call calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,(/temps,tempd/),mu,midgap)    
-    mu=(/ mus, mud /) + 0.5*(mu-(/ mus, mud /)) ! move Fermi level at contacts
-    print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
-  end if  
+!  if (iter == 0) then     
+!    call calc_n_electron(G_lesser,G_greater,nen,En,NS,NB,nm_dev,nelec,pelec,midgap)  ! calculate N and P at contacts  
+!    print '(a8,f15.4,a8,f15.4)', 'Ns=',nelec(1),'Nd=',nelec(2)
+!    print '(a8,f15.4,a8,f15.4)', 'Ps=',pelec(1),'Pd=',pelec(2)
+!  else    
+!    call calc_fermi_level(G_retarded,nelec,pelec,nen,En,NS,NB,nm_dev,(/temps,tempd/),mu,midgap)    
+!    mu=(/ mus, mud /) + 0.5*(mu-(/ mus, mud /)) ! move Fermi level at contacts
+!    print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)    
+!  end if  
   ! 
   call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
   call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
   call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
   call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
-  call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
   call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
   call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
   call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
@@ -822,7 +1281,7 @@ do iter=0,niter
   G_greater(:,:,:)=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   if (lwriteGF) then
-    call write_matrix_E('G_r',0,G_retarded,nen,en,length,NB,(/1.0,1.0/))
+    call write_matrix_E('G_r',0,G_retarded,nen,en,length,NB,(/1.0d0,1.0d0/))
     !call write_matrix_E('G_l',0,G_lesser,nen,en,length,NB,(/1.0,1.0/))
     !call write_matrix_E('G_g',0,G_greater,nen,en,length,NB,(/1.0,1.0/))
   endif
@@ -864,14 +1323,14 @@ do iter=0,niter
     P_greater=P_greater*dE  
     P_retarded=P_retarded*dE
     if (lwriteGF) then
-      call write_matrix('P_r',0,P_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+      call write_matrix('P_r',0,P_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
     endif
     !
     ! calculate W
-    call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
-      call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
+      call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
     endif
     !
     ! Accumulate the GW to Sigma
@@ -885,9 +1344,9 @@ do iter=0,niter
         if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then 
           Sig_lesser_new(i,l:h,ie)=Sig_lesser_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_lesser(i,l:h)
           Sig_greater_new(i,l:h,ie)=Sig_greater_new(i,l:h,ie)+G_greater(i,l:h,ie-nop)*W_greater(i,l:h)
-          Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h) + &
+          Sig_retarded_new(i,l:h,ie)=Sig_retarded_new(i,l:h,ie)+G_lesser(i,l:h,ie-nop)*W_retarded(i,l:h) + &                                      
                                      G_retarded(i,l:h,ie-nop)*W_lesser(i,l:h) + &
-                                     G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h)          
+                                     G_retarded(i,l:h,ie-nop)*W_retarded(i,l:h)                                               
         endif     
       enddo   
     enddo
@@ -914,7 +1373,7 @@ do iter=0,niter
   !!!Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), aimag(Sig_greater_new) )
   !
   if (lwriteGF) then
-    call write_matrix_E('Sigma_r',0,Sig_retarded_new,nen,en,length,NB,(/1.0,1.0/))
+    call write_matrix_E('Sigma_r',0,Sig_retarded_new,nen,en,length,NB,(/1.0d0,1.0d0/))
     !call write_matrix_E('Sigma_l',0,Sig_lesser_new,nen,en,length,NB,(/1.0,1.0/))
     !call write_matrix_E('Sigma_g',0,Sig_greater_new,nen,en,length,NB,(/1.0,1.0/))
   endif
@@ -932,13 +1391,13 @@ do iter=0,niter
   siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
   siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)    
   !
-  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
   !!!! calculate collision integral
   call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-  call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
 enddo                
 deallocate(siglead)
 deallocate(B,cur,tot_cur,tot_ecur)
@@ -1012,9 +1471,9 @@ do iter=0,niter
   call write_current_spectrum('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
   call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
   call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
-  call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
   !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
   !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
@@ -1048,9 +1507,9 @@ do iter=0,niter
   P_lesser=P_lesser*dE
   P_greater=P_greater*dE
   P_retarded=P_retarded*dE
-  call write_spectrum('PR',iter,P_retarded,nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('PL',iter,P_lesser,nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('PG',iter,P_greater,nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('PR',iter,P_retarded,nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('PL',iter,P_lesser,nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('PG',iter,P_greater,nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
   !call write_matrix_summed_overE('P_r',iter,P_retarded(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
 !  call write_matrix_E('P_r',iter,P_retarded(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !call write_matrix_E('P_l',iter,P_lesser(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
@@ -1077,9 +1536,9 @@ do iter=0,niter
     call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,W_retarded(:,:,nop),nm_dev,P_greater(:,:,nop),nm_dev,czero,B,nm_dev) 
     call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,W_retarded(:,:,nop),nm_dev,czero,W_greater(:,:,nop),nm_dev)   
   enddo
-  call write_spectrum('WR',iter,W_retarded,nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('WL',iter,W_lesser,  nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('WG',iter,W_greater, nen*2-1,wen,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('WR',iter,W_retarded,nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('WL',iter,W_lesser,  nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('WG',iter,W_greater, nen*2-1,wen,length,NB,Lx,(/1.0d0,1.0d0/))
   !call write_matrix_summed_overE('W_r',iter,W_retarded(:,:,nen/2+1:nen/2+nen),nen,en,length,NB,(/1.0,1.0/))
 !  call write_matrix_E('W_r',iter,W_retarded(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
   !call write_matrix_E('W_g',iter,W_greater(:,:,nen/2+1:nen/2+nen),nen,en-en(nen/2),length,NB,(/1.0,1.0/))
@@ -1149,9 +1608,9 @@ do iter=0,niter
 !    enddo
 !  enddo
   !
-  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum('gw_SigR',iter,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_SigL',iter,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum('gw_SigG',iter,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
   !call write_matrix_summed_overE('Sigma_r',iter,Sig_retarded,nen,en,length,NB,(/1.0,1.0/))
   !!!! calculate collision integral
   !call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)

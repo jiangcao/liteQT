@@ -100,7 +100,7 @@ if (ltrans) then
       open(unit=11,file='ek.dat',status='unknown')
       do ikz=1,nkz
         kz=-pi/Ly + dble(ikz-1)*dkz
-        call w90_MAT_DEF(H00ld(:,:,1,ikz),H10ld(:,:,1,ikz),0.0, kz,NS)
+        call w90_MAT_DEF(H00ld(:,:,1,ikz),H10ld(:,:,1,ikz),0.0d0, kz,NS)
         !
         H10ld(:,:,2,ikz) = H10ld(:,:,1,ikz)
         H10ld(:,:,1,ikz) = transpose(conjg(H10ld(:,:,1,ikz)))
@@ -374,7 +374,7 @@ if (ltrans) then
       if (lephot) then
       
         if (.not. lnogw) then
-          call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap(2),&
+          call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
               alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
               Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
@@ -464,7 +464,7 @@ if (ltrans) then
         end do
     end do      
     ! coulomb operator blocks
-    call w90_bare_coulomb_blocks(Vii(:,:,1),V1i(:,:,1),0.0, 0.0,eps_screen,r0,ns,ldiag)
+    call w90_bare_coulomb_blocks(Vii(:,:,1),V1i(:,:,1),0.0d0, 0.0d0,eps_screen,r0,ns,ldiag)
     !
     do i=2,length
       Vii(:,:,i)=Vii(:,:,1)
