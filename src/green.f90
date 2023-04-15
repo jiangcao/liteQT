@@ -31,7 +31,6 @@ subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,Egap,midgap(2)
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
@@ -90,7 +89,6 @@ subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,spindeg,temps
   Pmn,polarization,intensity,hw,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, Lx,spindeg,alpha_mix 
 real(8), intent(in) :: hw ! hw is photon energy in eV
@@ -180,7 +178,6 @@ end subroutine green_solve_ephoton_freespace_1D
 
 ! calculate e-photon self-energies in the monochromatic assumption
 subroutine calc_sigma_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
-implicit none
 integer,intent(in)::nm_dev,length,nen,nop
 real(8),intent(in)::en(nen)
 complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
@@ -222,7 +219,6 @@ end subroutine calc_sigma_ephoton_monochromatic
 
 ! calculate e-photon self-energies in spontaneous emission and ADD onto the Sig_r<>
 subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,prefactor,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
-implicit none
 integer,intent(in)::nm_dev,length,nen,nop
 real(8),intent(in)::en(nen)
 complex(8),intent(in)::prefactor
@@ -264,7 +260,6 @@ subroutine green_solve_gw_2D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,temp
   alpha_mix,nen,En,nb,ns,nphiz,Ham,H00lead,H10lead,T,V,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin,writeGF)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length, nphiz
 integer, intent(in), optional :: ndiagmin
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,Egap
@@ -506,7 +501,6 @@ subroutine green_solve_gw_2D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length, nphiz
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev,nphiz),H00lead(NB*NS,NB*NS,2,nphiz),H10lead(NB*NS,NB*NS,2,nphiz),T(NB*NS,nm_dev,2,nphiz)
@@ -710,7 +704,6 @@ end subroutine green_solve_gw_2D
 !  alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
 !  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
 !  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin,writeGF)
-!implicit none
 !integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 !integer, intent(in), optional :: ndiagmin
 !real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap,midgap(2)
@@ -958,7 +951,6 @@ end subroutine green_solve_gw_2D
 
 
 subroutine block2full(A,fullA,NB,length)
-implicit none
 complex(8),intent(in)::A(NB,NB,length)
 complex(8),intent(out)::fullA(NB*length,NB*length)
 integer,intent(in)::NB,length
@@ -973,7 +965,6 @@ end subroutine block2full
 
 
 subroutine full2block(fullA,A,NB,length)
-implicit none
 complex(8),intent(in)::fullA(NB*length,NB*length)
 complex(8),intent(out)::A(NB,NB,length)
 integer,intent(in)::NB,length
@@ -987,177 +978,173 @@ enddo
 end subroutine full2block
 
 
-!! calculate Gr and optionally G<>
-!subroutine green_calc_g_block(ne,E,num_lead,nm_dev,NB,NX,nm_lead,max_nm_lead,spindeg,Ham,H00,H10,Siglead,T,Scat_Sig_retarded_diag,Scat_Sig_lesser_diag,Scat_Sig_greater_diag,G_retarded_diag,G_lesser_diag,G_greater_diag,jdens,tot_cur,tot_ecur,Itot,Ispec,cur,te,mu,temp,mode)
-!implicit none
-!integer, intent(in) :: num_lead ! number of leads/contacts
-!integer, intent(in) :: nm_dev   ! size of device Hamiltonian
-!integer, intent(in) :: nm_lead(num_lead) ! size of lead Hamiltonians
-!integer, intent(in) :: max_nm_lead ! max size of lead Hamiltonians
-!integer, intent(in) :: NB, NX
-!real(8), intent(in) :: E(ne)  ! energy vector
-!real(8), intent(in) :: spindeg 
-!real(8), intent(out),optional :: cur(ne,num_lead)  ! current spectrum on leads
-!real(8), intent(out),optional :: te(ne,num_lead,num_lead)  ! transmission matrix
-!integer, intent(in) :: ne
-!complex(8), intent(in) :: Ham(nm_dev,nm_dev)
-!complex(8), intent(in) :: H00(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian diagonal blocks
-!complex(8), intent(in) :: H10(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian off-diagonal blocks
-!complex(8), intent(in) :: Siglead(max_nm_lead,max_nm_lead,ne,num_lead) ! lead sigma_r scattering
-!complex(8), intent(in) :: T(max_nm_lead,nm_dev,num_lead)  ! coupling matrix between leads and device
-!complex(8), intent(in) :: Scat_Sig_retarded_diag(NB,NB,NX,ne) ! scattering Selfenergy
-!complex(8), intent(in) :: Scat_Sig_lesser_diag(NB,NB,NX,ne)
-!complex(8), intent(in) :: Scat_Sig_greater_diag(NB,NB,NX,ne)
-!complex(8), intent(inout) :: G_retarded_diag(NB,NB,NX,ne)
-!complex(8), intent(inout) :: G_lesser_diag(NB,NB,NX,ne)
-!complex(8), intent(inout) :: G_greater_diag(NB,NB,NX,ne)
-!real(8),intent(out)::jdens(nm_dev,nm_dev,ne),tot_cur(nm_dev,nm_dev),tot_ecur(nm_dev,nm_dev)
-!complex(8),intent(out)::Ispec(nm_dev,nm_dev,ne),Itot(nm_dev,nm_dev)
-!real(8), intent(in), optional :: mu(num_lead), temp(num_lead)
-!character(len=*),intent(in), optional :: mode
-!integer :: i,j,nm,ie,io
-!complex(8), allocatable, dimension(:,:) :: S00,G00,GBB,A,sig,sig_lesser,sig_greater,B,C
-!complex(8), allocatable, dimension(:,:,:) :: gamma_lead
-!complex(8), allocatable, dimension(:,:) :: Scat_Sig_retarded,Scat_Sig_lesser,Scat_Sig_greater
-!complex(8), allocatable, dimension(:,:) :: G_retarded,G_lesser,G_greater
-!complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
-!complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
-!REAL(8), PARAMETER  :: BOLTZ=8.61734d-05 !eV K-1
-!real(8) :: fd, dE
-!logical :: solve_Gr
-!dE=E(2)-E(1)
-!allocate(Scat_Sig_lesser(nm_dev,nm_dev))
-!allocate(Scat_Sig_greater(nm_dev,nm_dev))
-!allocate(Scat_Sig_retarded(nm_dev,nm_dev)) 
-!allocate(G_lesser(nm_dev,nm_dev))
-!allocate(G_greater(nm_dev,nm_dev))
-!allocate(G_retarded(nm_dev,nm_dev)) 
-!!
-!allocate(sig(nm_dev,nm_dev))  
-!jdens=0.0d0
-!tot_cur=0.0d0
-!tot_ecur=0.0d0
-!Itot=0.0d0
-!solve_Gr = .true.
-!if (present(mode).and.(mode=='use_gr')) then
-!  solve_Gr = .false.
-!endif
-!if (present(cur)) then
-!  cur=0.0d0
-!endif
-!if (present(te)) then
-!  te=0.0d0
-!endif
-!if ((present(cur)).or.(present(te))) then
-! allocate(gamma_lead(nm_dev,nm_dev,num_lead))  
-!endif
-!do ie = 1, ne
-!  if (mod(ie,max(ne/10,1))==0) print '(I5,A,I5)',ie,'/',ne
-!  call block2full(Scat_Sig_lesser_diag(:,:,:,ie),Scat_Sig_lesser,NB,NX)
-!  call block2full(Scat_Sig_greater_diag(:,:,:,ie),Scat_Sig_greater,NB,NX)
-!  call block2full(Scat_Sig_retarded_diag(:,:,:,ie),Scat_Sig_retarded,NB,NX)
-!  if (.not. solve_Gr) then 
-!    call block2full(G_retarded_diag(:,:,:,ie),G_retarded,NB,NX)
-!  else
-!    G_retarded(:,:) = - Ham(:,:) - Scat_Sig_retarded(:,:) 
-!  endif
-!  if (ie .eq. 1) then
-!    allocate(sig_lesser(nm_dev,nm_dev))
-!    allocate(sig_greater(nm_dev,nm_dev))          
-!    allocate(B(nm_dev,nm_dev))
-!    allocate(C(nm_dev,nm_dev))
-!  end if
-!  sig_lesser(:,:) = dcmplx(0.0d0,0.0d0)      
-!  sig_greater(:,:) = dcmplx(0.0d0,0.0d0)      
-!  ! compute and add contact self-energies    
-!!  open(unit=101,file='sancho_gbb.dat',status='unknown',position='append')
-!!  open(unit=102,file='sancho_g00.dat',status='unknown',position='append')
-!!  open(unit=103,file='sancho_sig.dat',status='unknown',position='append')
-!  do i = 1,num_lead
-!    NM = nm_lead(i)    
-!    allocate(S00(nm,nm))
-!    allocate(G00(nm,nm))
-!    allocate(GBB(nm,nm))
-!    allocate(A(nm_dev,nm))    
-!    call identity(S00,nm)
-!    call sancho(NM,E(ie),S00,H00(1:nm,1:nm,i)+siglead(1:nm,1:nm,ie,i),H10(1:nm,1:nm,i),G00,GBB)
-!    call zgemm('c','n',nm_dev,nm,nm,cone,T(1:nm,1:nm_dev,i),nm,G00,nm,czero,A,nm_dev) 
-!    call zgemm('n','n',nm_dev,nm_dev,nm,cone,A,nm_dev,T(1:nm,1:nm_dev,i),nm,czero,sig,nm_dev)  
-!!    write(101,'(i4,2E15.4)') i, E(ie), -aimag(trace(GBB,nm))*2.0d0
-!!    write(102,'(i4,2E15.4)') i, E(ie), -aimag(trace(G00,nm))*2.0d0
-!!    write(103,'(i4,2E15.4)') i, E(ie), -aimag(trace(sig,nm_dev))*2.0d0
-!    if (solve_Gr) G_retarded(:,:) = G_retarded(:,:) - sig(:,:)
-!    fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
-!    B(:,:) = conjg(sig(:,:))
-!    C(:,:) = transpose(B(:,:))
-!    B(:,:) = sig(:,:) - C(:,:)
-!    sig_lesser(:,:) = sig_lesser(:,:) - B(:,:)*fd	        
-!    sig_greater(:,:) = sig_greater(:,:) + B(:,:)*(1.0d0-fd)	 
-!    if ((present(te)).or.(present(cur))) then
-!      gamma_lead(:,:,i)= B(:,:) 
-!    endif       
-!    deallocate(S00,G00,GBB,A)
-!  end do  
-!!  close(101)
-!!  close(102)
-!!  close(103)
-!  if (solve_Gr) then
-!    do i = 1,nm_dev
-!      G_retarded(i,i) = G_retarded(i,i) + dcmplx(E(ie),0.0d0)
-!    end do
-!    !
-!    call invert(G_retarded,nm_dev) 
-!    !
-!    call full2block(G_retarded,G_retarded_diag(:,:,:,ie),NB,NX)
-!  endif
-!  sig_lesser = sig_lesser + Scat_Sig_lesser
-!  sig_greater = sig_greater + Scat_Sig_greater     
-!  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_lesser,nm_dev,czero,B,nm_dev) 
-!  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
-!  G_lesser = C
-!  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_greater,nm_dev,czero,B,nm_dev) 
-!  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
-!  G_greater = C      
-!  call full2block(G_lesser,G_lesser_diag(:,:,:,ie),NB,NX)
-!  call full2block(G_greater,G_greater_diag(:,:,:,ie),NB,NX)
-!  !
-!  call calc_bond_current(Ham,G_lesser,1,dE,spindeg,nm_dev,tot_cur(:,:),tot_ecur(:,:),jdens(:,:,ie),accu=.true.)
-!  call calc_collision(Scat_Sig_lesser,Scat_Sig_greater,G_lesser,G_greater,1,dE,spindeg,nm_dev,Itot,Ispec(:,:,ie),accu=.true.)
-!  !
-!  if ((present(cur)).or.(present(te))) then
-!    ! calculate current spec and/or transmission at each lead/contact
-!    do i=1,num_lead                      
-!      if (present(cur)) then
-!        fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
-!        call zgemm('n','n',nm_dev,nm_dev,nm_dev,(1.0d0-fd),gamma_lead(:,:,i),nm_dev,G_lesser,nm_dev,czero,B,nm_dev)
-!        call zgemm('n','n',nm_dev,nm_dev,nm_dev,fd,gamma_lead(:,:,i),nm_dev,G_greater,nm_dev,cone,B,nm_dev)
-!        do io=1,nm_dev
-!          cur(ie,i)=cur(ie,i)+ dble(B(io,io))
-!        enddo
-!      endif        
-!      if (present(te)) then
-!        do j=1,num_lead                      
-!          if (j.ne.i) then
-!            call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,gamma_lead(:,:,i),nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
-!            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,gamma_lead(:,:,j),nm_dev,czero,C,nm_dev)
-!            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,C,nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
-!            do io=1,nm_dev
-!              te(ie,i,j)=te(ie,i,j)- dble(B(io,io)) ! Gamma = i[Sig^r - Sig^r \dagger] , hence the -1
-!            enddo
-!          endif
-!        enddo
-!      endif
-!    enddo
-!  endif
-!end do  
-!deallocate(sig)
-!deallocate(Scat_Sig_retarded,Scat_Sig_greater,Scat_Sig_lesser)
-!deallocate(G_retarded,G_lesser,G_greater)
-!deallocate(B,C,sig_lesser,sig_greater)
-!if ((present(cur)).or.(present(te))) then
-! deallocate(gamma_lead)
-!endif
-!end subroutine green_calc_g_block
+! calculate Gr and optionally G<>
+! calculate the full GFs but only save the diagonal blocks of GF and current to save memory
+! the array structure is different 
+subroutine green_calc_g_block(ne,E,num_lead,nm_dev,NB,NX,nm_lead,max_nm_lead,spindeg,Ham,H00,H10,Siglead,T,Scat_Sig_retarded_diag,Scat_Sig_lesser_diag,Scat_Sig_greater_diag,G_retarded_diag,G_lesser_diag,G_greater_diag,jdens,tot_cur,tot_ecur,Itot,Ispec,cur,te,mu,temp)
+integer, intent(in) :: num_lead ! number of leads/contacts
+integer, intent(in) :: nm_dev   ! size of device Hamiltonian
+integer, intent(in) :: nm_lead(num_lead) ! size of lead Hamiltonians
+integer, intent(in) :: max_nm_lead ! max size of lead Hamiltonians
+integer, intent(in) :: NB, NX
+real(8), intent(in) :: E(ne)  ! energy vector
+real(8), intent(in) :: spindeg 
+real(8), intent(out),optional :: cur(ne,num_lead)  ! current spectrum on leads
+real(8), intent(out),optional :: te(ne,num_lead,num_lead)  ! transmission matrix
+integer, intent(in) :: ne
+complex(8), intent(in) :: Ham(nm_dev,nm_dev)
+complex(8), intent(in) :: H00(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian diagonal blocks
+complex(8), intent(in) :: H10(max_nm_lead,max_nm_lead,num_lead) ! lead Hamiltonian off-diagonal blocks
+complex(8), intent(in) :: Siglead(max_nm_lead,max_nm_lead,ne,num_lead) ! lead sigma_r scattering
+complex(8), intent(in) :: T(max_nm_lead,nm_dev,num_lead)  ! coupling matrix between leads and device
+complex(8), intent(in), dimension(NB,NB,NX,ne) :: Scat_Sig_retarded_diag,Scat_Sig_lesser_diag,Scat_Sig_greater_diag ! scattering Selfenergy
+complex(8), intent(inout), dimension(NB,NB,NX,ne) :: G_retarded_diag,G_lesser_diag,G_greater_diag ! Green's functions
+real(8),intent(out), dimension(NB,NB,NX,ne)::jdens
+real(8),intent(out), dimension(NB,NB,NX)::tot_cur,tot_ecur
+complex(8),intent(out), dimension(NB,NB,NX,ne)::Ispec
+complex(8),intent(out), dimension(NB,NB,NX)::Itot
+real(8), intent(in), optional :: mu(num_lead), temp(num_lead)
+integer :: i,j,nm,ie,io
+complex(8), allocatable, dimension(:,:) :: S00,G00,GBB,A,sig,sig_lesser,sig_greater,B,C
+complex(8), allocatable, dimension(:,:,:) :: gamma_lead
+complex(8), allocatable, dimension(:,:) :: Scat_Sig_retarded,Scat_Sig_lesser,Scat_Sig_greater
+complex(8), allocatable, dimension(:,:) :: G_retarded,G_lesser,G_greater
+complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+REAL(8), PARAMETER  :: BOLTZ=8.61734d-05 !eV K-1
+real(8) :: fd, dE
+logical :: solve_Gr
+dE=E(2)-E(1)
+allocate(Scat_Sig_lesser(nm_dev,nm_dev))  ! full matrix of the whole device 
+allocate(Scat_Sig_greater(nm_dev,nm_dev))
+allocate(Scat_Sig_retarded(nm_dev,nm_dev)) 
+allocate(G_lesser(nm_dev,nm_dev))
+allocate(G_greater(nm_dev,nm_dev))
+allocate(G_retarded(nm_dev,nm_dev)) 
+!
+allocate(sig(nm_dev,nm_dev))  
+jdens=0.0d0
+tot_cur=0.0d0
+tot_ecur=0.0d0
+Itot=0.0d0
+solve_Gr = .true.
+if (present(cur)) then
+  cur=0.0d0
+endif
+if (present(te)) then
+  te=0.0d0
+endif
+if ((present(cur)).or.(present(te))) then
+ allocate(gamma_lead(nm_dev,nm_dev,num_lead))  
+endif
+do ie = 1, ne
+  if (mod(ie,max(ne/10,1))==0) print '(I5,A,I5)',ie,'/',ne
+  ! convert diagonal blocks to full matrix
+  call block2full(Scat_Sig_lesser_diag(:,:,:,ie),Scat_Sig_lesser,NB,NX)
+  call block2full(Scat_Sig_greater_diag(:,:,:,ie),Scat_Sig_greater,NB,NX)
+  call block2full(Scat_Sig_retarded_diag(:,:,:,ie),Scat_Sig_retarded,NB,NX)
+  if (.not. solve_Gr) then 
+    call block2full(G_retarded_diag(:,:,:,ie),G_retarded,NB,NX)
+  else
+    G_retarded(:,:) = - Ham(:,:) - Scat_Sig_retarded(:,:) 
+  endif
+  if (ie .eq. 1) then
+    allocate(sig_lesser(nm_dev,nm_dev))
+    allocate(sig_greater(nm_dev,nm_dev))          
+    allocate(B(nm_dev,nm_dev))
+    allocate(C(nm_dev,nm_dev))
+  end if
+  sig_lesser(:,:) = dcmplx(0.0d0,0.0d0)      
+  sig_greater(:,:) = dcmplx(0.0d0,0.0d0)      
+  ! compute and add contact self-energies    
+!  open(unit=101,file='sancho_gbb.dat',status='unknown',position='append')
+!  open(unit=102,file='sancho_g00.dat',status='unknown',position='append')
+!  open(unit=103,file='sancho_sig.dat',status='unknown',position='append')
+  do i = 1,num_lead
+    NM = nm_lead(i)    
+    allocate(S00(nm,nm))
+    allocate(G00(nm,nm))
+    allocate(GBB(nm,nm))
+    allocate(A(nm_dev,nm))    
+    call identity(S00,nm)
+    call sancho(NM,E(ie),S00,H00(1:nm,1:nm,i)+siglead(1:nm,1:nm,ie,i),H10(1:nm,1:nm,i),G00,GBB)
+    call zgemm('c','n',nm_dev,nm,nm,cone,T(1:nm,1:nm_dev,i),nm,G00,nm,czero,A,nm_dev) 
+    call zgemm('n','n',nm_dev,nm_dev,nm,cone,A,nm_dev,T(1:nm,1:nm_dev,i),nm,czero,sig,nm_dev)  
+!    write(101,'(i4,2E15.4)') i, E(ie), -aimag(trace(GBB,nm))*2.0d0
+!    write(102,'(i4,2E15.4)') i, E(ie), -aimag(trace(G00,nm))*2.0d0
+!    write(103,'(i4,2E15.4)') i, E(ie), -aimag(trace(sig,nm_dev))*2.0d0
+    if (solve_Gr) G_retarded(:,:) = G_retarded(:,:) - sig(:,:)
+    fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
+    B(:,:) = conjg(sig(:,:))
+    C(:,:) = transpose(B(:,:))
+    B(:,:) = sig(:,:) - C(:,:)
+    sig_lesser(:,:) = sig_lesser(:,:) - B(:,:)*fd	        
+    sig_greater(:,:) = sig_greater(:,:) + B(:,:)*(1.0d0-fd)	 
+    if ((present(te)).or.(present(cur))) then
+      gamma_lead(:,:,i)= B(:,:) 
+    endif       
+    deallocate(S00,G00,GBB,A)
+  end do  
+!  close(101)
+!  close(102)
+!  close(103)
+  if (solve_Gr) then
+    do i = 1,nm_dev
+      G_retarded(i,i) = G_retarded(i,i) + dcmplx(E(ie),0.0d0)
+    end do
+    !
+    call invert(G_retarded,nm_dev) 
+    !
+    call full2block(G_retarded,G_retarded_diag(:,:,:,ie),NB,NX)
+  endif
+  sig_lesser = sig_lesser + Scat_Sig_lesser
+  sig_greater = sig_greater + Scat_Sig_greater     
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_lesser,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
+  G_lesser = C
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,G_retarded,nm_dev,sig_greater,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,G_retarded,nm_dev,czero,C,nm_dev)
+  G_greater = C      
+  call full2block(G_lesser,G_lesser_diag(:,:,:,ie),NB,NX)
+  call full2block(G_greater,G_greater_diag(:,:,:,ie),NB,NX)
+  !
+  call calc_bond_current(Ham,G_lesser,1,dE,spindeg,nm_dev,tot_cur(:,:),tot_ecur(:,:),jdens(:,:,ie),accu=.true.)
+  call calc_collision(Scat_Sig_lesser,Scat_Sig_greater,G_lesser,G_greater,1,dE,spindeg,nm_dev,Itot,Ispec(:,:,ie),accu=.true.)
+  !
+  if ((present(cur)).or.(present(te))) then
+    ! calculate current spec and/or transmission at each lead/contact
+    do i=1,num_lead                      
+      if (present(cur)) then
+        fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,(1.0d0-fd),gamma_lead(:,:,i),nm_dev,G_lesser,nm_dev,czero,B,nm_dev)
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,fd,gamma_lead(:,:,i),nm_dev,G_greater,nm_dev,cone,B,nm_dev)
+        do io=1,nm_dev
+          cur(ie,i)=cur(ie,i)+ dble(B(io,io))
+        enddo
+      endif        
+      if (present(te)) then
+        do j=1,num_lead                      
+          if (j.ne.i) then
+            call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,gamma_lead(:,:,i),nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
+            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,gamma_lead(:,:,j),nm_dev,czero,C,nm_dev)
+            call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,C,nm_dev,G_retarded,nm_dev,czero,B,nm_dev)
+            do io=1,nm_dev
+              te(ie,i,j)=te(ie,i,j)- dble(B(io,io)) ! Gamma = i[Sig^r - Sig^r \dagger] , hence the -1
+            enddo
+          endif
+        enddo
+      endif
+    enddo
+  endif
+end do  
+deallocate(sig)
+deallocate(Scat_Sig_retarded,Scat_Sig_greater,Scat_Sig_lesser)
+deallocate(G_retarded,G_lesser,G_greater)
+deallocate(B,C,sig_lesser,sig_greater)
+if ((present(cur)).or.(present(te))) then
+ deallocate(gamma_lead)
+endif
+end subroutine green_calc_g_block
 
 
 
@@ -1171,7 +1158,6 @@ subroutine green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,spindeg,temps,temp
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap,ndiagmin,writeGF)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 integer, intent(in), optional :: ndiagmin
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg, Egap,midgap(2)
@@ -1413,7 +1399,6 @@ subroutine green_solve_gw_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
-implicit none
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
 real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg
 complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),T(NB*NS,nm_dev,2)
@@ -1754,7 +1739,6 @@ end subroutine calc_fermi_level
 
 ! calculate Gr and optionally G<>
 subroutine green_calc_g(ne,E,num_lead,nm_dev,nm_lead,max_nm_lead,Ham,H00,H10,Siglead,T,Scat_Sig_retarded,Scat_Sig_lesser,Scat_Sig_greater,G_retarded,G_lesser,G_greater,cur,te,mu,temp,mode)
-implicit none
 integer, intent(in) :: num_lead ! number of leads/contacts
 integer, intent(in) :: nm_dev   ! size of device Hamiltonian
 integer, intent(in) :: nm_lead(num_lead) ! size of lead Hamiltonians
@@ -1904,7 +1888,6 @@ end subroutine green_calc_g
 
 ! calculate bond current using I_ij = H_ij G<_ji - H_ji G^<_ij
 subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
-implicit none
 complex(8),intent(in)::H(nm_dev,nm_dev),G_lesser(nm_dev,nm_dev,nen)
 real(8),intent(in)::en(nen),spindeg
 integer,intent(in)::nen,nm_dev
@@ -1935,7 +1918,6 @@ end subroutine calc_bond_current
 ! calculate scattering collision integral from the self-energy
 ! I = Sig> G^< - Sig< G^>
 subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,I,Ispec)
-implicit none
 complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_greater,G_lesser,Sig_lesser,Sig_greater
 real(8),intent(in)::en(nen),spindeg
 integer,intent(in)::nen,nm_dev
@@ -2164,7 +2146,6 @@ end subroutine write_spectrum_summed_over_kz
 
 ! a slightly modified version of sancho
 subroutine surface_function(nm,M00,M01,M10,SF,cond)
-implicit none
 integer,intent(in)::nm
 complex(8),intent(in),dimension(nm,nm)::M00,M01,M10
 complex(8),intent(out),dimension(nm,nm)::SF
@@ -2216,7 +2197,6 @@ end subroutine surface_function
 
 ! Sancho-Rubio 
 subroutine sancho(nm,E,S00,H00,H10,G00,GBB)
-implicit none
   complex(8), parameter :: alpha = cmplx(1.0d0,0.0d0)
   complex(8), parameter :: beta  = cmplx(0.0d0,0.0d0)
   integer i,j,k,nm,nmax
@@ -2366,7 +2346,6 @@ end subroutine subspace_invert
 
 
 subroutine identity(A,n)
-  implicit none      
   integer, intent(in) :: n        
   complex(8), dimension(n,n), intent(inout) :: A
   integer :: i
@@ -2376,8 +2355,7 @@ subroutine identity(A,n)
   end do
 end subroutine identity
 
-Function trace(A,nn)
-  implicit none      
+Function trace(A,nn) 
   integer :: nn,i        
   complex(8), dimension(nn,nn),intent(in) :: A
   complex(8) :: trace, tr
@@ -2388,8 +2366,7 @@ Function trace(A,nn)
   trace=tr
 end function trace
 
-subroutine invert(A,nn)
-  implicit none      
+subroutine invert(A,nn)  
   integer :: info,lda,lwork,nn      
   integer, dimension(:), allocatable :: ipiv
   complex(8), dimension(nn,nn),intent(inout) :: A
@@ -2409,7 +2386,6 @@ End Function ferm
 
 
 FUNCTION STRING(inn)
-  IMPLICIT NONE
   INTEGER, PARAMETER :: POS= 4
   INTEGER, INTENT(IN) :: inn
   CHARACTER(LEN=POS) :: STRING
@@ -2427,7 +2403,6 @@ END FUNCTION STRING
 
 ! Z(nop) = sum_ie X(ie) Y(ie-nop)
 function corr1d(n,X,Y,method) result(Z)
-implicit none
 integer, intent(in)::n
 character(len=*),intent(in)::method
 complex(8),intent(in)::X(n),Y(n)
@@ -2452,7 +2427,6 @@ end function corr1d
 
 ! Z(ie) = sum_nop X(ie-nop) Y(nop)
 function conv1d(n,X,Y,method) result(Z)
-implicit none
 integer, intent(in)::n
 character(len=*),intent(in)::method
 complex(8),intent(in)::X(n),Y(n*2-1)
@@ -2509,7 +2483,6 @@ end subroutine do_mkl_dfti_conv
 subroutine get_OBC_blocks_for_W(n,v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01,NBC,&
     V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
     LL00,LL01,LL10,LG00,LG01,LG10)
-implicit none
 integer,intent(in)::n,NBC
 complex(8),intent(in),dimension(n,n)::v_00,v_01,pR_00,pR_01,pL_00,pL_01,pG_00,pG_01
 complex(8),intent(out),dimension(n*NBC,n*NBC)::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
@@ -2621,7 +2594,6 @@ end subroutine get_OBC_blocks_for_W
 
 ! calculate corrections to the L matrix blocks for the Open Boundary Condition
 subroutine get_dL_OBC_for_W(nm,xR,LL00,LL01,LG00,LG01,M10,typ, dLL11,dLG11)
-implicit none
 integer,intent(in)::nm
 character(len=*),intent(in)::typ
 complex(8),intent(in),dimension(nm,nm)::xR,LL00,LL01,LG00,LG01,M10
@@ -2686,7 +2658,6 @@ end subroutine get_dL_OBC_for_W
 
 
 subroutine green_calc_w(NBC,NB,NS,nm_dev,PR,PL,PG,V,WR,WL,WG)
-implicit none
 integer,intent(in)::nm_dev,NB,NS,NBC
 complex(8),intent(in),dimension(nm_dev,nm_dev)::PR,PL,PG,V
 complex(8),intent(out),dimension(nm_dev,nm_dev)::WR,WL,WG
@@ -2858,7 +2829,6 @@ deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
 end subroutine green_calc_w
 
 subroutine open_boundary_conditions(nm,M00,M01,M10,V10,xR,dM,dV,cond)
-implicit none
 integer,intent(in)::nm
 complex(8),intent(in),dimension(nm,nm)::M00,M01,M10,V10
 complex(8),intent(out),dimension(nm,nm)::xR,dM,dV
@@ -2874,7 +2844,6 @@ call zgemm('n','n',nm,nm,nm,cone,tmp1,nm,V10,nm,czero,dV,nm)
 end subroutine open_boundary_conditions
 
 FUNCTION eigv(NN, A)
-implicit none
 INTEGER, INTENT(IN) :: NN
 COMPLEX(8), INTENT(INOUT), DIMENSION(:,:) :: A
 REAL(8) :: eigv(NN)
