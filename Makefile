@@ -1,11 +1,11 @@
 # Fortran 90 compiler
-MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/mkl/
+MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2019.0.117/linux/mkl
 FC90 = /usr/sepp/bin/ifort-2020-af
-FC90 = /usr/sepp/bin/gfortran-9.2.0-af
+FC90 = ifort 
 #F90_FLAGS =  -r8 -check bounds -traceback -fpp 
 MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
-F90_FLAGS =  -ffree-line-length-none -fopenmp
-LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_gf_lp64.a ${MKLROOT}/lib/intel64/libmkl_gnu_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl 
+F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback -qopenmp  -check bounds 
+LIBS = -I$(MKLROOT)/include
 
 
 # Modules directory
@@ -20,12 +20,11 @@ vpath %.o $(MODDIR)
 
 # Targets.
 
-all: liteQT_g.x 
+all: liteQT.x 
 
-liteQT_g.x : main.f90 mkl_dfti.o wannierHam.o green.o green_rgf.o
+liteQT.x : main.f90 wannierHam.o green.o green_rgf.o bse_mod.o phononDyn.o
 
-	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
-
+	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) $(LIBARPACK) -module $(MODDIR)
 
 .PHONY : clean;
 
@@ -35,4 +34,4 @@ clean :
 # implicit rules
 
 %.o : %.f90
-	$(FC90) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) -I$(MODDIR) -J$(MODDIR) 
+	$(FC90) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) -module $(MODDIR)
