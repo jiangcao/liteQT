@@ -46,15 +46,18 @@ real(8),intent(in)::encut(2) ! intraband and interband cutoff for P
 !----
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
-integer::iter,ndiagmin
+integer::iter,ndiagmin,nop
   print *,'======================================='
   print *,'====== green_solve_gw_ephoton_1D ======'
   print *,'======================================='
+  print '(a8,f15.4,a8,e15.4)','hw=',hw,'I=',intensity  
+  nop=floor(hw / (En(2)-En(1)))
+  print *,'nop=',nop
   allocate(tot_cur(nm_dev,nm_dev))
   allocate(tot_ecur(nm_dev,nm_dev))
   allocate(cur(nm_dev,nm_dev,nen))
   allocate(Ispec(nm_dev,nm_dev,nen))
-  allocate(Itot(nm_dev,nm_dev))
+  allocate(Itot(nm_dev,nm_dev))  
   do iter=0,niter
     ndiagmin=NB*(min(NS,iter))
     if (ldiag) ndiagmin = 0
@@ -78,8 +81,8 @@ integer::iter,ndiagmin
     call calc_bond_current(Ham,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
     call write_current_spectrum('gw_eph_Jdens',iter,cur,nen,en,length,NB,Lx)
     call write_current('gw_eph_I',iter,tot_cur,length,NB,1,Lx)
-    call write_current('gw_eph_EI',iter,tot_ecur,length,NB,1,Lx)
-  enddo
+    call write_current('gw_eph_EI',iter,tot_ecur,length,NB,1,Lx)    
+  enddo  
   deallocate(cur,tot_cur,tot_ecur)
   deallocate(Ispec,Itot)
 end subroutine green_solve_gw_ephoton_1D
@@ -100,6 +103,7 @@ real(8), intent(in) :: polarization(3) ! light polarization vector
 real(8), intent(in) :: intensity ! [W/m^2]
 real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
 !---------
+complex(8),dimension(:,:),allocatable ::  Pi_retarded,Pi_lesser,Pi_greater
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
 integer::ie,nop,i,iter,j
@@ -111,7 +115,10 @@ real(8)::Nphot,mu(2)
   allocate(tot_ecur(nm_dev,nm_dev))
   allocate(cur(nm_dev,nm_dev,nen))
   allocate(Ispec(nm_dev,nm_dev,nen))
-  allocate(Itot(nm_dev,nm_dev))
+  allocate(Itot(nm_dev,nm_dev))  
+  allocate(Pi_retarded(nm_dev,nm_dev))
+  allocate(Pi_lesser(nm_dev,nm_dev))
+  allocate(Pi_greater(nm_dev,nm_dev))
   mu=(/ mus, mud /)
   allocate(siglead(NB*NS,NB*NS,nen,2))  
   ! get leads sigma
@@ -171,7 +178,12 @@ real(8)::Nphot,mu(2)
     ! calculate collision integral
     call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
     call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-  enddo
+    ! calculate absorption
+    print *, 'calc Pi'
+    call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
+    call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/))
+  enddo      
+  deallocate(Pi_lesser,Pi_greater,Pi_retarded)
   deallocate(M,siglead)
   deallocate(cur,tot_cur,tot_ecur)
   deallocate(Ispec,Itot)
@@ -217,6 +229,44 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   !$omp end parallel
   Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
 end subroutine calc_sigma_ephoton_monochromatic
+
+
+! calculate e-photon polarization self-energies in the monochromatic assumption
+subroutine calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)
+integer,intent(in)::nm_dev,length,nen,nop
+real(8),intent(in)::en(nen)
+complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_lesser,G_greater
+complex(8),intent(inout),dimension(nm_dev,nm_dev)::Pi_retarded,Pi_lesser,Pi_greater
+!---------
+integer::ie
+complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+  Pi_lesser=0.0d0
+  Pi_greater=0.0d0
+  Pi_retarded=0.0d0  
+  ! Pi^<>(hw) = \Sum_E M G^<>(E) M G^><(E - hw) M
+  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Pi_lesser,Pi_greater,M)
+  allocate(B(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev))  
+  !$omp do
+  do ie=1,nen
+    if ((ie-nop>=1).and.(ie-nop<=nen)) then
+      ! Pi^<(hw) = \sum_E M G<(E) M G>(E-hw)
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,G_greater(:,:,ie-nop),nm_dev,cone,Pi_lesser,nm_dev)         
+      ! Pi^>(hw) = \sum_E M G>(E) M G<(E-hw)   
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_greater(:,:,ie),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,G_lesser(:,:,ie-nop),nm_dev,cone,Pi_greater,nm_dev)             
+    endif
+  enddo  
+  !$omp end do
+  deallocate(A,B)
+  !$omp end parallel
+  Pi_retarded = dcmplx(0.0d0*dble(Pi_retarded),aimag(Pi_greater-Pi_lesser)/2.0d0)
+end subroutine calc_pi_ephoton_monochromatic
+
 
 ! calculate e-photon self-energies in spontaneous emission and ADD onto the Sig_r<>
 subroutine calc_sigma_ephoton_monochromatic_spontaneous_emission(nm_dev,length,nen,En,nop,M,prefactor,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
@@ -2026,6 +2076,25 @@ subroutine write_current_spectrum_block(dataset,i,cur,nen,en,length,NB,Lx)
   close(11)
 end subroutine write_current_spectrum_block
 
+! write trace of diagonal blocks
+subroutine write_trace(dataset,i,G,length,NB,Lx,coeff)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(:,:)
+integer, intent(in)::i,length,NB
+real(8), intent(in)::Lx,coeff(2)
+integer:: ie,j,ib
+complex(8)::tr
+open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+do j = 1,length
+    tr=0.0d0          
+    do ib=1,nb
+        tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib)            
+    end do
+    write(11,'(4E18.4)') j*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+end do
+close(11)
+end subroutine write_trace
+
 ! write spectrum into file (pm3d map)
 subroutine write_spectrum(dataset,i,G,nen,en,length,NB,Lx,coeff)
 character(len=*), intent(in) :: dataset
@@ -2436,7 +2505,15 @@ subroutine invert(A,nn)
   allocate(work(nn*nn))
   allocate(ipiv(nn))
   call zgetrf(nn,nn,A,nn,ipiv,info)
+  if (info.ne.0) then
+    print*,'SEVERE warning: zgbtrf failed, info=',info
+    call abort
+  endif
   call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+  if (info.ne.0) then
+    print*,'SEVERE warning: zgbtri failed, info=',info
+    call abort
+  endif
   deallocate(work)
   deallocate(ipiv)
 end subroutine invert
@@ -2604,26 +2681,9 @@ select case (NBC)
     PL01=czero
     PL01(n+1:2*n,1:n)=pL_01
     PL10=-transpose(conjg(PL01))    
-
-!    case(3)
-
-!        V00=[[v_00 v_01 sparse(N,N)];[v_01' v_00 v_01];[sparse(N,N),v_01' v_00]];
-!        V01=[sparse(2*N,3*N);[v_01 sparse(N,2*N)]];
-!        V10=V01';
-    
-!        PR00=[[pR_00 pR_01 sparse(N,N)];[conj(pR_01') pR_00 pR_01];[sparse(N,N),conj(pR_01') pR_00]];
-!        PR01=[sparse(2*N,3*N);[pR_01 sparse(N,2*N)]];
-!        PR10=conj(PR01');
-    
-!        PL00=[[pL_00 pL_01 sparse(N,N)];[-pL_01' pL_00 pL_01];[sparse(N,N),-pL_01' pL_00]];
-!        PL01=[sparse(2*N,3*N);[pL_01 sparse(N,2*N)]];
-!        PL10=-PL01';
-    
-!        PG00=[[pG_00 pG_01 sparse(N,N)];[-pG_01' pG_00 pG_01];[sparse(N,N),-pG_01' pG_00]];
-!        PG01=[sparse(2*N,3*N);[pG_01 sparse(N,2*N)]];
-!        PG10=-PG01';
+!
 end select
-
+!
 call identity(II,NBC*N)
 M00=II*dcmplx(1.0d0,1d-10)-matmul(V10,PR01)
 M00=M00-matmul(V00,PR00)-matmul(V01,PR10)
