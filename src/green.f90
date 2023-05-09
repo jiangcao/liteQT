@@ -180,8 +180,13 @@ real(8)::Nphot,mu(2)
     call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
     ! calculate absorption
     print *, 'calc Pi'
-    call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
-    call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/))
+    open(unit=99,file='eph_totabs'//TRIM(STRING(i))//'.dat',status='unknown')
+    do i=1,nen
+      call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,i,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
+      call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/),E=dble(i)*(En(2)-En(1)))
+      write(99,*) dble(i)*(En(2)-En(1)) , aimag(trace(Pi_retarded,nm_dev))
+    enddo
+    close(99)
   enddo      
   deallocate(Pi_lesser,Pi_greater,Pi_retarded)
   deallocate(M,siglead)
@@ -794,7 +799,7 @@ print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 ! build the energy vector for P and W
 dE= En(2)-En(1) 
 nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
-nnop2=floor((encut(2) - Egap)/dble(dE))  ! interband , include Egap
+nnop2=floor((min(encut(2),(maxval(En)-minval(En))) - Egap)/dble(dE))  ! interband , include Egap
 nnop=nnop1*2-1+nnop2*2 ! + and - freq.
 allocate(nops(nnop))
 allocate(wen(nnop))
@@ -916,7 +921,7 @@ do iter=0,niter
     endif
     !
     ! calculate W
-    call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(0,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
     !  call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0,1.0/))
@@ -1849,7 +1854,7 @@ if ((present(cur)).or.(present(te))) then
  allocate(gamma_lead(nm_dev,nm_dev,num_lead))  
 endif
 do ie = 1, ne
-  if (mod(ie,ne/10)==0) print '(I5,A,I5)',ie,'/',ne
+  if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',ne
   if (solve_Gr) G_retarded(:,:,ie) = - Ham(:,:) - Scat_Sig_retarded(:,:,ie) 
   if ((present(G_lesser)).or.(present(G_greater))) then    
     if (ie .eq. 1) then
@@ -2077,21 +2082,27 @@ subroutine write_current_spectrum_block(dataset,i,cur,nen,en,length,NB,Lx)
 end subroutine write_current_spectrum_block
 
 ! write trace of diagonal blocks
-subroutine write_trace(dataset,i,G,length,NB,Lx,coeff)
+subroutine write_trace(dataset,i,G,length,NB,Lx,coeff,E)
 character(len=*), intent(in) :: dataset
 complex(8), intent(in) :: G(:,:)
 integer, intent(in)::i,length,NB
 real(8), intent(in)::Lx,coeff(2)
+real(8), intent(in),optional::E
 integer:: ie,j,ib
 complex(8)::tr
-open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown', position="append", action="write")
 do j = 1,length
     tr=0.0d0          
     do ib=1,nb
         tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib)            
     end do
-    write(11,'(4E18.4)') j*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+    if (.not.(present(E))) then
+     write(11,'(3E18.4)') j*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+    else
+     write(11,'(4E18.4)') j*Lx, E, dble(tr)*coeff(1), aimag(tr)*coeff(2)         
+    endif
 end do
+write(11,*)
 close(11)
 end subroutine write_trace
 
@@ -2350,7 +2361,7 @@ subroutine sancho(nm,E,S00,H00,H10,G00,GBB)
   Allocate( C(nm,nm) )
   Allocate( tmp(nm,nm) )
   nmax=200
-  z = cmplx(E,1.0d-3)
+  z = cmplx(E,1.0d-5)
   Id=0.0d0
   tmp=0.0d0
   do i=1,nm
@@ -2506,12 +2517,12 @@ subroutine invert(A,nn)
   allocate(ipiv(nn))
   call zgetrf(nn,nn,A,nn,ipiv,info)
   if (info.ne.0) then
-    print*,'SEVERE warning: zgbtrf failed, info=',info
+    print*,'SEVERE warning: zgetrf failed, info=',info
     call abort
   endif
   call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
   if (info.ne.0) then
-    print*,'SEVERE warning: zgbtri failed, info=',info
+    print*,'SEVERE warning: zgetri failed, info=',info
     call abort
   endif
   deallocate(work)
@@ -2599,7 +2610,6 @@ subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
 ! 1D complex to complex
 Use MKL_DFTI
 integer :: n
-real(8) :: a
 Complex(8) :: X_in(n),Y_in(n),Z_out(n)
 Complex(8) :: X_out(n),Y_out(n),Z_in(n)
 type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
@@ -2798,156 +2808,176 @@ NR=NB*NS ! right contact block size
 NT=nm_dev! total size
 LBsize=NL*NBC
 RBsize=NR*NBC
-allocate(B(NT,NT))
-allocate(M(NT,NT))
-allocate(S(NT,NT))
-allocate(LL(NT,NT))
-allocate(LG(NT,NT))
-allocate(V00 (LBsize,LBsize))
-allocate(V01 (LBsize,LBsize))
-allocate(V10 (LBsize,LBsize))
-allocate(M00 (LBsize,LBsize))
-allocate(M01 (LBsize,LBsize))
-allocate(M10 (LBsize,LBsize))
-allocate(PR00(LBsize,LBsize))
-allocate(PR01(LBsize,LBsize))
-allocate(PR10(LBsize,LBsize))
-allocate(PG00(LBsize,LBsize))
-allocate(PG01(LBsize,LBsize))
-allocate(PG10(LBsize,LBsize))
-allocate(PL00(LBsize,LBsize))
-allocate(PL01(LBsize,LBsize))
-allocate(PL10(LBsize,LBsize))
-allocate(LG00(LBsize,LBsize))
-allocate(LG01(LBsize,LBsize))
-allocate(LG10(LBsize,LBsize))
-allocate(LL00(LBsize,LBsize))
-allocate(LL01(LBsize,LBsize))
-allocate(LL10(LBsize,LBsize))
-allocate(dM11(LBsize,LBsize))
-allocate(xR11(LBsize,LBsize))
-allocate(dV11(LBsize,LBsize))
-allocate(dLL11(LBsize,LBsize))
-allocate(dLG11(LBsize,LBsize))
-!
-allocate(VNN  (RBsize,RBsize))
-allocate(VNN1 (RBsize,RBsize))
-allocate(Vn1n (RBsize,RBsize))
-allocate(Mnn  (RBsize,RBsize))
-allocate(Mnn1 (RBsize,RBsize))
-allocate(Mn1n (RBsize,RBsize))
-allocate(PRnn (RBsize,RBsize))
-allocate(PRnn1(RBsize,RBsize))
-allocate(PRn1n(RBsize,RBsize))
-allocate(PGnn (RBsize,RBsize))
-allocate(PGnn1(RBsize,RBsize))
-allocate(PGn1n(RBsize,RBsize))
-allocate(PLnn (RBsize,RBsize))
-allocate(PLnn1(RBsize,RBsize))
-allocate(PLn1n(RBsize,RBsize))
-allocate(LGnn (RBsize,RBsize))
-allocate(LGnn1(RBsize,RBsize))
-allocate(LGn1n(RBsize,RBsize))
-allocate(LLnn (RBsize,RBsize))
-allocate(LLnn1(RBsize,RBsize))
-allocate(LLn1n(RBsize,RBsize))
-allocate(dMnn (RBsize,RBsize))
-allocate(xRnn (RBsize,RBsize))
-allocate(dLLnn(RBsize,RBsize))
-allocate(dLGnn(RBsize,RBsize))
-allocate(dVnn(RBsize,RBsize))
-!
-call get_OBC_blocks_for_W(NL,V(1:NL,1:NL),V(1:NL,NL+1:2*NL),PR(1:NL,1:NL),PR(1:NL,NL+1:2*NL),&
-    PL(1:NL,1:NL),PL(1:NL,NL+1:2*NL),PG(1:NL,1:NL),PG(1:NL,NL+1:2*NL),NBC,&
-    V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
-    LL00,LL01,LL10,LG00,LG01,LG10)
-!    
-call get_OBC_blocks_for_W(NR,V(NT-NR+1:NT,NT-NR+1:NT),transpose(conjg(V(NT-NR+1:NT,NT-2*NR+1:NT-NR))),PR(NT-NR+1:NT,NT-NR+1:NT),&
-    transpose(PR(NT-NR+1:NT,NT-2*NR+1:NT-NR)),PL(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PL(NT-NR+1:NT,NT-2*NR+1:NT-NR))),&
-    PG(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PG(NT-NR+1:NT,NT-2*NR+1:NT-NR))),NBC,&
-    VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
-    LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
-!
-!! S = V P^r
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PR,nm_dev,czero,S,nm_dev)
-! Correct first and last block to account for elements in the contacts
-S(1:LBsize,1:LBsize)=S(1:LBsize,1:LBsize) + matmul(V10,PR01)
-S(NT-RBsize+1:NT,NT-RBsize+1:NT)=S(NT-RBsize+1:NT,NT-RBsize+1:NT) + matmul(VNN1,PRN1N)
-!
-M = -S
-do i=1,nm_dev
-   M(i,i) = 1.0d0 + M(i,i)
-enddo
-deallocate(S)
-!! LL=V P^l V'
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PL,nm_dev,czero,B,nm_dev) 
-call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LL,nm_dev) 
-!Correct first and last block to account for elements in the contacts
-LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + matmul(matmul(V10,PL00),V01) + &
-  matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
-!  
-LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
-  matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
-  matmul(matmul(VNN1,PLNN),VN1N)
-!
-!! LG=V P^g V'    
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PG,nm_dev,czero,B,nm_dev) 
-call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LG,nm_dev) 
-!Correct first and last block to account for elements in the contacts
-LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + matmul(matmul(V10,PG00),V01) + &
-  matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
-LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
-  matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
-  
-! WR/WL/WG OBC Left
-call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
-! WR/WL/WG OBC right
-call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
-allocate(VV(nm_dev,nm_dev))
-VV = V
-if (condL<1.0d-6) then   
-    !
-    call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
-    !
-    M(1:LBsize,1:LBsize)=M(1:LBsize,1:LBsize) - dM11
-    VV(1:LBsize,1:LBsize)=V(1:LBsize,1:LBsize) - dV11    
-    LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + dLL11
-    LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + dLG11    
-endif
-if (condR<1.0d-6) then    
-    !
-    call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
-    !
-    M(NT-RBsize+1:NT,NT-RBsize+1:NT)=M(NT-RBsize+1:NT,NT-RBsize+1:NT) - dMNN
-    VV(NT-RBsize+1:NT,NT-RBsize+1:NT)=V(NT-RBsize+1:NT,NT-RBsize+1:NT)- dVNN
-    LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLLNN
-    LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLGNN    
-endif
-!!!! calculate W^r = (I - V P^r)^-1 V    
-call invert(M,nm_dev) ! M -> xR
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,VV,nm_dev,czero,WR,nm_dev)           
-! calculate W^< and W^> = W^r P^<> W^r dagger
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LL,nm_dev,czero,B,nm_dev) 
-call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WL,nm_dev) 
-call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LG,nm_dev,czero,B,nm_dev) 
-call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WG,nm_dev)  
-deallocate(M,LL,LG,B,VV)
-deallocate(V00,V01,V10)
-deallocate(M00,M01,M10)
-deallocate(PR00,PR01,PR10)
-deallocate(PG00,PG01,PG10)
-deallocate(PL00,PL01,PL10)
-deallocate(LG00,LG01,LG10)
-deallocate(LL00,LL01,LL10)
-deallocate(VNN,VNN1,Vn1n)
-deallocate(Mnn,Mnn1,Mn1n)
-deallocate(PRnn,PRnn1,PRn1n)
-deallocate(PGnn,PGnn1,PGn1n)
-deallocate(PLnn,PLnn1,PLn1n)
-deallocate(LGnn,LGnn1,LGn1n)
-deallocate(LLnn,LLnn1,LLn1n)
-deallocate(dM11,xR11,dLL11,dLG11,dV11)
-deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
+if (NBC>0) then
+  allocate(B(NT,NT))
+  allocate(M(NT,NT))
+  allocate(S(NT,NT))
+  allocate(LL(NT,NT))
+  allocate(LG(NT,NT))
+  allocate(V00 (LBsize,LBsize))
+  allocate(V01 (LBsize,LBsize))
+  allocate(V10 (LBsize,LBsize))
+  allocate(M00 (LBsize,LBsize))
+  allocate(M01 (LBsize,LBsize))
+  allocate(M10 (LBsize,LBsize))
+  allocate(PR00(LBsize,LBsize))
+  allocate(PR01(LBsize,LBsize))
+  allocate(PR10(LBsize,LBsize))
+  allocate(PG00(LBsize,LBsize))
+  allocate(PG01(LBsize,LBsize))
+  allocate(PG10(LBsize,LBsize))
+  allocate(PL00(LBsize,LBsize))
+  allocate(PL01(LBsize,LBsize))
+  allocate(PL10(LBsize,LBsize))
+  allocate(LG00(LBsize,LBsize))
+  allocate(LG01(LBsize,LBsize))
+  allocate(LG10(LBsize,LBsize))
+  allocate(LL00(LBsize,LBsize))
+  allocate(LL01(LBsize,LBsize))
+  allocate(LL10(LBsize,LBsize))
+  allocate(dM11(LBsize,LBsize))
+  allocate(xR11(LBsize,LBsize))
+  allocate(dV11(LBsize,LBsize))
+  allocate(dLL11(LBsize,LBsize))
+  allocate(dLG11(LBsize,LBsize))
+  !
+  allocate(VNN  (RBsize,RBsize))
+  allocate(VNN1 (RBsize,RBsize))
+  allocate(Vn1n (RBsize,RBsize))
+  allocate(Mnn  (RBsize,RBsize))
+  allocate(Mnn1 (RBsize,RBsize))
+  allocate(Mn1n (RBsize,RBsize))
+  allocate(PRnn (RBsize,RBsize))
+  allocate(PRnn1(RBsize,RBsize))
+  allocate(PRn1n(RBsize,RBsize))
+  allocate(PGnn (RBsize,RBsize))
+  allocate(PGnn1(RBsize,RBsize))
+  allocate(PGn1n(RBsize,RBsize))
+  allocate(PLnn (RBsize,RBsize))
+  allocate(PLnn1(RBsize,RBsize))
+  allocate(PLn1n(RBsize,RBsize))
+  allocate(LGnn (RBsize,RBsize))
+  allocate(LGnn1(RBsize,RBsize))
+  allocate(LGn1n(RBsize,RBsize))
+  allocate(LLnn (RBsize,RBsize))
+  allocate(LLnn1(RBsize,RBsize))
+  allocate(LLn1n(RBsize,RBsize))
+  allocate(dMnn (RBsize,RBsize))
+  allocate(xRnn (RBsize,RBsize))
+  allocate(dLLnn(RBsize,RBsize))
+  allocate(dLGnn(RBsize,RBsize))
+  allocate(dVnn(RBsize,RBsize))
+  !
+  call get_OBC_blocks_for_W(NL,V(1:NL,1:NL),V(1:NL,NL+1:2*NL),PR(1:NL,1:NL),PR(1:NL,NL+1:2*NL),&
+      PL(1:NL,1:NL),PL(1:NL,NL+1:2*NL),PG(1:NL,1:NL),PG(1:NL,NL+1:2*NL),NBC,&
+      V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+      LL00,LL01,LL10,LG00,LG01,LG10)
+  !    
+  call get_OBC_blocks_for_W(NR,V(NT-NR+1:NT,NT-NR+1:NT),transpose(conjg(V(NT-NR+1:NT,NT-2*NR+1:NT-NR))),PR(NT-NR+1:NT,NT-NR+1:NT),&
+      transpose(PR(NT-NR+1:NT,NT-2*NR+1:NT-NR)),PL(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PL(NT-NR+1:NT,NT-2*NR+1:NT-NR))),&
+      PG(NT-NR+1:NT,NT-NR+1:NT),-transpose(conjg(PG(NT-NR+1:NT,NT-2*NR+1:NT-NR))),NBC,&
+      VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
+      LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
+  !
+  !! S = V P^r
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PR,nm_dev,czero,S,nm_dev)
+  ! Correct first and last block to account for elements in the contacts
+  S(1:LBsize,1:LBsize)=S(1:LBsize,1:LBsize) + matmul(V10,PR01)
+  S(NT-RBsize+1:NT,NT-RBsize+1:NT)=S(NT-RBsize+1:NT,NT-RBsize+1:NT) + matmul(VNN1,PRN1N)
+  !
+  M = -S
+  do i=1,nm_dev
+     M(i,i) = 1.0d0 + M(i,i)
+  enddo
+  deallocate(S)
+  !! LL=V P^l V'
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PL,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LL,nm_dev) 
+  !Correct first and last block to account for elements in the contacts
+  LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + matmul(matmul(V10,PL00),V01) + &
+    matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
+  !  
+  LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
+    matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
+    matmul(matmul(VNN1,PLNN),VN1N)
+  !
+  !! LG=V P^g V'    
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,V,nm_dev,PG,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,LG,nm_dev) 
+  !Correct first and last block to account for elements in the contacts
+  LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + matmul(matmul(V10,PG00),V01) + &
+    matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
+  LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + &
+    matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
+    
+  ! WR/WL/WG OBC Left
+  call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
+  ! WR/WL/WG OBC right
+  call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
+  allocate(VV(nm_dev,nm_dev))
+  VV = V
+  if (condL<1.0d-6) then   
+      !
+      call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
+      !
+      M(1:LBsize,1:LBsize)=M(1:LBsize,1:LBsize) - dM11
+      VV(1:LBsize,1:LBsize)=V(1:LBsize,1:LBsize) - dV11    
+      LL(1:LBsize,1:LBsize)=LL(1:LBsize,1:LBsize) + dLL11
+      LG(1:LBsize,1:LBsize)=LG(1:LBsize,1:LBsize) + dLG11    
+  endif
+  if (condR<1.0d-6) then    
+      !
+      call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
+      !
+      M(NT-RBsize+1:NT,NT-RBsize+1:NT)=M(NT-RBsize+1:NT,NT-RBsize+1:NT) - dMNN
+      VV(NT-RBsize+1:NT,NT-RBsize+1:NT)=V(NT-RBsize+1:NT,NT-RBsize+1:NT)- dVNN
+      LL(NT-RBsize+1:NT,NT-RBsize+1:NT)=LL(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLLNN
+      LG(NT-RBsize+1:NT,NT-RBsize+1:NT)=LG(NT-RBsize+1:NT,NT-RBsize+1:NT) + dLGNN    
+  endif
+  !!!! calculate W^r = (I - V P^r)^-1 V    
+  call invert(M,nm_dev) ! M -> xR
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,VV,nm_dev,czero,WR,nm_dev)           
+  ! calculate W^< and W^> = W^r P^<> W^r dagger
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LL,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WL,nm_dev) 
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,LG,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,WG,nm_dev)  
+  deallocate(M,LL,LG,B,VV)
+  deallocate(V00,V01,V10)
+  deallocate(M00,M01,M10)
+  deallocate(PR00,PR01,PR10)
+  deallocate(PG00,PG01,PG10)
+  deallocate(PL00,PL01,PL10)
+  deallocate(LG00,LG01,LG10)
+  deallocate(LL00,LL01,LL10)
+  deallocate(VNN,VNN1,Vn1n)
+  deallocate(Mnn,Mnn1,Mn1n)
+  deallocate(PRnn,PRnn1,PRn1n)
+  deallocate(PGnn,PGnn1,PGn1n)
+  deallocate(PLnn,PLnn1,PLn1n)
+  deallocate(LGnn,LGnn1,LGn1n)
+  deallocate(LLnn,LLnn1,LLn1n)
+  deallocate(dM11,xR11,dLL11,dLG11,dV11)
+  deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
+else ! no OBC correction
+  allocate(B(NT,NT))
+  allocate(M(NT,NT))    
+  !! M = I - V P^r
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,PR,nm_dev,czero,M,nm_dev)
+  !
+  do i=1,nm_dev
+     M(i,i) = 1.0d0 + M(i,i)
+  enddo    
+  !!!! calculate W^r = (I - V P^r)^-1 V    
+  call invert(M,nm_dev) ! M -> xR
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,V,nm_dev,czero,WR,nm_dev)           
+  ! calculate W^< and W^> = W^r P^<> W^r dagger
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,WR,nm_dev,PL,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,WR,nm_dev,czero,WL,nm_dev) 
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,WR,nm_dev,PG,nm_dev,czero,B,nm_dev) 
+  call zgemm('n','c',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,WR,nm_dev,czero,WG,nm_dev)  
+  deallocate(B,M)  
+endif 
 end subroutine green_calc_w
 
 subroutine open_boundary_conditions(nm,M00,M01,M10,V10,xR,dM,dV,cond)
