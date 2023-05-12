@@ -28,7 +28,7 @@ CONTAINS
 ! driver for solving the GW and e-photon SCBA together   
 subroutine green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,V,&
-  Pmn,polarization,intensity,hw,&
+  Pmn,polarization,intensity,hw,labs,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Egap)
@@ -43,6 +43,7 @@ real(8), intent(in) :: hw ! hw is photon energy in eV
 complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
 logical,intent(in)::ldiag
 real(8),intent(in)::encut(2) ! intraband and interband cutoff for P
+logical, intent(in) :: labs ! whether to calculate Pi and absorption
 !----
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
@@ -68,7 +69,7 @@ integer::iter,ndiagmin,nop
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),ldiag,encut,Egap,ndiagmin=ndiagmin)
     call green_solve_ephoton_freespace_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
             0.0d0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
-            Pmn(:,:,:),polarization,intensity,hw,&
+            Pmn(:,:,:),polarization,intensity,hw,labs,&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:))       
     ! combine e-photon Sig to GW Sig
@@ -90,7 +91,7 @@ end subroutine green_solve_gw_ephoton_1D
 ! driver for solving the e-photon SCBA
 subroutine green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,T,&
-  Pmn,polarization,intensity,hw,&
+  Pmn,polarization,intensity,hw,labs,&
   G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
   Sig_retarded_new,Sig_lesser_new,Sig_greater_new)
 integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
@@ -101,6 +102,7 @@ complex(8), intent(in):: Pmn(nm_dev,nm_dev,3) ! momentum matrix [eV] (multiplied
 complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 real(8), intent(in) :: polarization(3) ! light polarization vector 
 real(8), intent(in) :: intensity ! [W/m^2]
+logical, intent(in) :: labs ! whether to calculate Pi and absorption
 real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
 !---------
 complex(8),dimension(:,:),allocatable ::  Pi_retarded,Pi_lesser,Pi_greater
@@ -179,14 +181,16 @@ real(8)::Nphot,mu(2)
     call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
     call write_spectrum('eph_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
     ! calculate absorption
-    print *, 'calc Pi'
-    open(unit=99,file='eph_totabs'//TRIM(STRING(i))//'.dat',status='unknown')
-    do i=1,nen
-      call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,i,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
-      call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/),E=dble(i)*(En(2)-En(1)))
-      write(99,*) dble(i)*(En(2)-En(1)) , aimag(trace(Pi_retarded,nm_dev))
-    enddo
-    close(99)
+    if (labs) then
+      print *, 'calc Pi'
+      open(unit=99,file='eph_totabs'//TRIM(STRING(iter))//'.dat',status='unknown')
+      do i=1,nen
+          call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,i,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
+          call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/),E=dble(i)*(En(2)-En(1)))
+          write(99,*) dble(i)*(En(2)-En(1)) , aimag(trace(Pi_retarded,nm_dev))
+      enddo
+      close(99)
+    endif
   enddo      
   deallocate(Pi_lesser,Pi_greater,Pi_retarded)
   deallocate(M,siglead)
@@ -976,15 +980,15 @@ do iter=0,niter
   Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)    
   ! make sure self-energy is continuous near leads (by copying edge block)
   do ie=1,nen
-    do ix=1,2
-      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,3,ie)
-      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,3,ie)
-      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,3,ie)
+    do ix=1,NS
+      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,NS+1,ie)
+      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,NS+1,ie)
+      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,NS+1,ie)
     enddo
-    do ix=length-1,length
-      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,length-2,ie)
-      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,length-2,ie)
-      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,length-2,ie)
+    do ix=length-NS+1,length
+      Sig_retarded(:,:,ix,ie)=Sig_retarded(:,:,length-NS,ie)
+      Sig_lesser(:,:,ix,ie)=Sig_lesser(:,:,length-NS,ie)
+      Sig_greater(:,:,ix,ie)=Sig_greater(:,:,length-NS,ie)
     enddo
   enddo
   ! get leads sigma
@@ -1104,7 +1108,7 @@ if ((present(cur)).or.(present(te))) then
  allocate(gamma_lead(nm_dev,nm_dev,num_lead))  
 endif
 do ie = 1, ne
-  if (mod(ie,max(ne/10,1))==0) print '(I5,A,I5)',ie,'/',ne
+  if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',ne
   ! convert diagonal blocks to full matrix
   call block2full(Scat_Sig_lesser_diag(:,:,:,ie),Scat_Sig_lesser,NB,NX)
   call block2full(Scat_Sig_greater_diag(:,:,:,ie),Scat_Sig_greater,NB,NX)
@@ -1267,7 +1271,7 @@ print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
 ! build the energy vector for P and W
 dE= En(2)-En(1) 
 nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
-nnop2=floor((encut(2) - Egap)/dble(dE))  ! interband , include Egap
+nnop2=floor((min(encut(2),(maxval(En)-minval(En))) - Egap)/dble(dE))  ! interband , include Egap
 nnop=nnop1*2-1+nnop2*2 ! + and - freq.
 allocate(nops(nnop))
 allocate(wen(nnop))
@@ -1384,7 +1388,7 @@ do iter=0,niter
     endif
     !
     ! calculate W
-    call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(0,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
       call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
@@ -2518,12 +2522,13 @@ subroutine invert(A,nn)
   call zgetrf(nn,nn,A,nn,ipiv,info)
   if (info.ne.0) then
     print*,'SEVERE warning: zgetrf failed, info=',info
-    call abort
-  endif
-  call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
-  if (info.ne.0) then
-    print*,'SEVERE warning: zgetri failed, info=',info
-    call abort
+    A=czero
+  else
+    call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+    if (info.ne.0) then
+      print*,'SEVERE warning: zgetri failed, info=',info
+      A=czero
+    endif
   endif
   deallocate(work)
   deallocate(ipiv)

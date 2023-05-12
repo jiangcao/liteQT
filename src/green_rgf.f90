@@ -974,14 +974,14 @@ end subroutine identity
 
 
 !!!! RGF for diagonal blocks of G^r,<,>
-subroutine green_RGF_CMS(TEMP,nm,nx,E,mu,Sii,Hii,H1i,sigma_lesser_ph,sigma_greater_ph,sigma_r_ph,ndens,pdens,ldos,tr,tre,cur,Gi1) 
+subroutine green_RGF_CMS(TEMP,nm,nx,E,mu,Sii,Hii,H1i,sigma_lesser_ph,sigma_greater_ph,sigma_r_ph,ndens,pdens,ldos,tr,tre,cur,GRi1,GLi1,GGi1) 
     implicit none    
     integer,intent(in)::nm,nx
     real(8),intent(in) :: E,mu(2),temp(2)
-    COMPLEX(8),intent(in),dimension(nm,nm,Nx) :: sigma_lesser_ph,sigma_greater_ph,sigma_r_ph ! diag blocks of GFs
+    COMPLEX(8),intent(in),dimension(nm,nm,Nx) :: sigma_lesser_ph,sigma_greater_ph,sigma_r_ph ! diag blocks of scattering SE
     COMPLEX(8),intent(in),dimension(nm,nm,Nx) :: Sii,Hii,H1i ! diag blocks of Overlap and H and 1st off-diag blocks of H
-    COMPLEX(8),intent(inout),dimension(nm,nm,Nx) :: cur,ldos,ndens,pdens
-    COMPLEX(8),intent(inout),dimension(nm,nm,Nx),optional :: Gi1
+    COMPLEX(8),intent(inout),dimension(nm,nm,Nx) :: cur,ldos,ndens,pdens ! diag blocks of GFs
+    COMPLEX(8),intent(inout),dimension(nm,nm,Nx),optional :: GRi1,GLi1,GGi1 ! off-diag blocks (i,i+1) of GFs
     real(8),intent(inout) :: tr,tre
     ! ------- 
     COMPLEX(8) :: H00(nm,nm),H10(nm,nm),A(nm,nm),B(nm,nm),C(nm,nm),D(nm,nm),S00(nm,nm),G00(nm,nm),GBB(nm,nm),GN0(nm,nm),Gn(nm,nm),Gp(nm,nm)
@@ -1079,9 +1079,9 @@ subroutine green_RGF_CMS(TEMP,nm,nx,E,mu,Sii,Hii,H1i,sigma_lesser_ph,sigma_great
     call zgemm('n','n',nm,nm,nm,alpha,G00,nm,sig,nm,beta,B,nm) 
     call zgemm('n','c',nm,nm,nm,alpha,B,nm,G00,nm,beta,Gn,nm) 
     ! G<00 = G00 sig< G00'
-    ndens(:,:,nx)=Gn(:,:)
-    pdens(:,:,nx)=Gn(:,:)+(G00(:,:)-transpose(conjg(G00(:,:))))
+    ndens(:,:,nx)=Gn(:,:)    
     Gp(:,:)=Gn(:,:)+(G00(:,:)-transpose(conjg(G00(:,:))))
+    pdens(:,:,nx)=Gp(:,:)
     A=-(sigmar-transpose(conjg(sigmar)))*ferm((E-mur)/(BOLTZ*TEMPl))
     call zgemm('n','n',nm,nm,nm,alpha,A,nm,Gp,nm,beta,B,nm)
     A=-(sigmar-transpose(conjg(sigmar)))*(ferm((E-mur)/(BOLTZ*TEMPl))-1.0d0)
@@ -1105,24 +1105,37 @@ subroutine green_RGF_CMS(TEMP,nm,nx,E,mu,Sii,Hii,H1i,sigma_lesser_ph,sigma_great
         call zgemm('n','n',nm,nm,nm,alpha,G00,nm,B,nm,beta,A,nm)
         B=C+A
         call zgemm('c','n',nm,nm,nm,alpha,H10,nm,B,nm,beta,A,nm)      !!! G<_i+1,i     
-        cur(:,:,l)=2.0d0*dble(A(:,:))     
+        cur(:,:,l)=dble(A(:,:))     
         !-------------------------
-        !     A=Gn
-        !     call zgemm('n','c',nm,nm,nm,alpha,Gl(:,:,l),nm,H10,nm,beta,B,nm) 
-        !     call zgemm('n','n',nm,nm,nm,alpha,B,nm,A,nm,beta,C,nm)  
-        !     A=Gln(:,:,l)
-        !     call zgemm('n','c',nm,nm,nm,alpha,A,nm,H10,nm,beta,B,nm) 
-        !     call zgemm('n','c',nm,nm,nm,alpha,B,nm,G00,nm,beta,A,nm) 
-        !     B=C+A
-        !     call zgemm('n','n',nm,nm,nm,alpha,H10,nm,B,nm,beta,A,nm)    !!! G<_i,i+1
-        !     cur(:,:,l)=cur(:,:,l)-A(:,:)
-        !     cur(:,:,l)=dble(cur(:,:,l))
+        A=Gn
+        call zgemm('n','c',nm,nm,nm,alpha,Gl(:,:,l),nm,H10,nm,beta,B,nm) 
+        call zgemm('n','n',nm,nm,nm,alpha,B,nm,A,nm,beta,C,nm)   ! g H10 G<
+        A=Gln(:,:,l)
+        call zgemm('n','c',nm,nm,nm,alpha,A,nm,H10,nm,beta,B,nm) 
+        call zgemm('n','c',nm,nm,nm,alpha,B,nm,G00,nm,beta,A,nm) ! g< H10 G'
+        B=C+A
+        if (present(GLi1)) then 
+          GLi1(:,:,l)=B
+        endif
+        call zgemm('n','n',nm,nm,nm,alpha,H10,nm,B,nm,beta,A,nm)      !!! G<_i,i+1
+        cur(:,:,l)=cur(:,:,l)-dble(A(:,:))        
+        !-------------------------
+        if (present(GGi1)) then
+          A=Gp
+          call zgemm('c','c',nm,nm,nm,alpha,Gl(:,:,l),nm,H10,nm,beta,B,nm) 
+          call zgemm('n','n',nm,nm,nm,alpha,B,nm,A,nm,beta,C,nm)   ! g H10 G>
+          A=Glp(:,:,l)
+          call zgemm('n','c',nm,nm,nm,alpha,A,nm,H10,nm,beta,B,nm) 
+          call zgemm('n','n',nm,nm,nm,alpha,B,nm,G00,nm,beta,A,nm) ! g> H10 G
+          B=C+A         
+          GGi1(:,:,l)=B
+        endif        
         !-------------------------
         D(:,:)= Gl(:,:,l)
         call zgemm('n','c',nm,nm,nm,alpha,D,nm,H10,nm,beta,B,nm) 
         call zgemm('n','n',nm,nm,nm,alpha,B,nm,G00,nm,beta,GN0,nm)      !!! G_i,i+1
-        if (present(Gi1)) then 
-          Gi1(:,:,l)=GN0
+        if (present(GRi1)) then 
+          GRi1(:,:,l)=GN0
         endif
         call zgemm('n','n',nm,nm,nm,alpha,GN0,nm,H10,nm,beta,A,nm)
         call zgemm('n','n',nm,nm,nm,alpha,A,nm,D,nm,beta,C,nm)     
