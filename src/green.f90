@@ -22,6 +22,7 @@ real(8), parameter :: m0=9.109d-31 ! kg
 real(8), parameter :: eps0=8.854d-12 ! C/V/m 
 real(8), parameter :: c0=2.998d8 ! m/s
 real(8), parameter :: e0=1.6022d-19 ! C
+REAL(8), PARAMETER :: pi = 3.14159265359d0
 
 CONTAINS
 
@@ -143,6 +144,7 @@ real(8)::Nphot,mu(2)
   print '(a8,f15.4,a8,e15.4)','hw=',hw,'I=',intensity  
   nop=floor(hw / (En(2)-En(1)))
   print *,'nop=',nop
+  print '(a15,3f8.2)','polarization=',polarization
   print '(a8,f15.4)','dE(meV)=',(En(2)-En(1))*1.0d3
   do iter=0,niter
     ! empty files for sancho 
@@ -184,10 +186,10 @@ real(8)::Nphot,mu(2)
     if (labs) then
       print *, 'calc Pi'
       open(unit=99,file='eph_totabs'//TRIM(STRING(iter))//'.dat',status='unknown')
-      do i=1,nen
+      do i=1,floor(4.0d0/(En(2)-En(1)))
           call calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,i,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)  
-          call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,1.0d0/),E=dble(i)*(En(2)-En(1)))
-          write(99,*) dble(i)*(En(2)-En(1)) , aimag(trace(Pi_retarded,nm_dev))
+          call write_trace('eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,-1.0d0/),E=dble(i)*(En(2)-En(1)))
+          write(99,*) dble(i)*(En(2)-En(1)) , -aimag(trace(Pi_retarded,nm_dev))
       enddo
       close(99)
     endif
@@ -250,9 +252,11 @@ complex(8),intent(inout),dimension(nm_dev,nm_dev)::Pi_retarded,Pi_lesser,Pi_grea
 !---------
 integer::ie
 complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+complex(8)::dE
   Pi_lesser=0.0d0
   Pi_greater=0.0d0
   Pi_retarded=0.0d0  
+  dE= dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi ) 
   ! Pi^<>(hw) = \Sum_E M G^<>(E) M G^><(E - hw) M
   !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Pi_lesser,Pi_greater,M)
   allocate(B(nm_dev,nm_dev))
@@ -273,6 +277,8 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
   !$omp end do
   deallocate(A,B)
   !$omp end parallel
+  Pi_lesser=Pi_lesser*dE
+  Pi_greater=Pi_greater*dE
   Pi_retarded = dcmplx(0.0d0*dble(Pi_retarded),aimag(Pi_greater-Pi_lesser)/2.0d0)
 end subroutine calc_pi_ephoton_monochromatic
 

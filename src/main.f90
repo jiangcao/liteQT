@@ -26,7 +26,7 @@ real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2)
-real(8) :: intensity,hw,midgap(2)
+real(8) :: intensity,hw,midgap(2),polaris(3)
 num_vac=0 ! number of vacancies
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -72,6 +72,7 @@ if (ltrans) then
     read(10,*) lephot
     if (lephot) then
       read(10,*) hw,intensity
+      read(10,*) polaris(:)
       read(10,*) lnogw
       read(10,*) labs
     endif
@@ -371,7 +372,7 @@ if (ltrans) then
         if (.not. lnogw) then
           call green_solve_gw_ephoton_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
               alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
-              Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,labs,&
+              Pmn(:,:,:,1),polaris,intensity,hw,labs,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
               W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
               Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg)
@@ -380,7 +381,7 @@ if (ltrans) then
          
            call green_solve_ephoton_freespace_1D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
               alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),&
-              Pmn(:,:,:,1),(/1.0d0,0.0d0,0.0d0/),intensity,hw,labs,&
+              Pmn(:,:,:,1),polaris,intensity,hw,labs,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
               Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1))
          endif
