@@ -46,9 +46,10 @@ logical,intent(in)::ldiag
 real(8),intent(in)::encut(2) ! intraband and interband cutoff for P
 logical, intent(in) :: labs ! whether to calculate Pi and absorption
 !----
+complex(8),dimension(:,:),allocatable ::  Pi_retarded,Pi_lesser,Pi_greater,M
 real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:)
 complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
-integer::iter,ndiagmin,nop
+integer::iter,ndiagmin,nop,i
   print *,'======================================='
   print *,'====== green_solve_gw_ephoton_1D ======'
   print *,'======================================='
@@ -59,18 +60,18 @@ integer::iter,ndiagmin,nop
   allocate(tot_ecur(nm_dev,nm_dev))
   allocate(cur(nm_dev,nm_dev,nen))
   allocate(Ispec(nm_dev,nm_dev,nen))
-  allocate(Itot(nm_dev,nm_dev))  
+  allocate(Itot(nm_dev,nm_dev))    
   do iter=0,niter
     ndiagmin=NB*(min(NS,iter))
     if (ldiag) ndiagmin = 0
-    call green_solve_gw_1D_memsaving(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
+    call green_solve_gw_1D_memsaving(5,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,midgap,&
             alpha_mix,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),V(:,:),&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),&
             Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:),ldiag,encut,Egap,ndiagmin=ndiagmin)
     call green_solve_ephoton_freespace_1D(0,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,&
             0.0d0,nen,En,nb,ns,Ham(:,:),H00lead(:,:,:),H10lead(:,:,:),T(:,:,:),&
-            Pmn(:,:,:),polarization,intensity,hw,labs,&
+            Pmn(:,:,:),polarization,intensity,hw,.false.,&
             G_retarded(:,:,:),G_lesser(:,:,:),G_greater(:,:,:),Sig_retarded(:,:,:),Sig_lesser(:,:,:),Sig_greater(:,:,:),&
             Sig_retarded_new(:,:,:),Sig_lesser_new(:,:,:),Sig_greater_new(:,:,:))       
     ! combine e-photon Sig to GW Sig
@@ -85,8 +86,27 @@ integer::iter,ndiagmin,nop
     call write_current('gw_eph_I',iter,tot_cur,length,NB,1,Lx)
     call write_current('gw_eph_EI',iter,tot_ecur,length,NB,1,Lx)    
   enddo  
+  if (labs) then
+    print *, 'calc Pi'
+    allocate(Pi_retarded(nm_dev,nm_dev))
+    allocate(Pi_lesser(nm_dev,nm_dev))
+    allocate(Pi_greater(nm_dev,nm_dev))
+    allocate(M(nm_dev,nm_dev))
+    M=dcmplx(0.0d0,0.0d0)  
+    do i=1,3
+      M=M+ polarization(i) * Pmn(:,:,i) 
+    enddo  
+    open(unit=99,file='gw_eph_totabs'//TRIM(STRING(iter))//'.dat',status='unknown')
+    do i=1,floor(4.0d0/(En(2)-En(1)))
+        call calc_pi_gw_ephoton(spindeg,nm_dev,length,nen,En,i,M,G_lesser,G_greater,G_retarded,V,Pi_retarded,Pi_lesser,Pi_greater)  
+        call write_trace('gw_eph_absorp',iter,Pi_retarded,length,NB,Lx,(/1.0d0,-1.0d0/),E=dble(i)*(En(2)-En(1)))
+        write(99,*) dble(i)*(En(2)-En(1)) , -aimag(trace(Pi_retarded,nm_dev))
+    enddo
+    close(99) 
+    deallocate(Pi_lesser,Pi_greater,Pi_retarded,M)
+  endif
   deallocate(cur,tot_cur,tot_ecur)
-  deallocate(Ispec,Itot)
+  deallocate(Ispec,Itot)  
 end subroutine green_solve_gw_ephoton_1D
 
 ! driver for solving the e-photon SCBA
@@ -242,7 +262,100 @@ complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
 end subroutine calc_sigma_ephoton_monochromatic
 
 
-! calculate e-photon polarization self-energies in the monochromatic assumption
+! calculate e-photon polarization of interacting electron-hole pair
+subroutine calc_pi_gw_ephoton(spindeg,nm_dev,length,nen,En,nop,M,G_lesser,G_greater,G_retarded,V,Pi_retarded,Pi_lesser,Pi_greater)
+integer,intent(in)::nm_dev,length,nen,nop
+real(8),intent(in)::en(nen),spindeg
+complex(8),intent(in),dimension(nm_dev,nm_dev)::M ! e-photon interaction matrix
+complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_lesser,G_greater,G_retarded
+complex(8),intent(in),dimension(nm_dev,nm_dev)::V ! bare Coulomb matrix
+complex(8),intent(inout),dimension(nm_dev,nm_dev)::Pi_retarded,Pi_lesser,Pi_greater
+!---------
+integer::ie,i
+complex(8),allocatable::B(:,:),A(:,:),PR(:,:),WR(:,:) ! tmp matrix
+complex(8)::dE
+  Pi_lesser=0.0d0
+  Pi_greater=0.0d0
+  Pi_retarded=0.0d0  
+  dE= dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi ) * spindeg
+  ! independent quasi-particle polarization
+  ! Pi^<>(hw) = \Sum_E M G^<>(E) M G^><(E - hw) M
+  !$omp parallel default(none) private(ie,A,B) shared(nop,nen,nm_dev,G_lesser,G_greater,Pi_lesser,Pi_greater,M)
+  allocate(B(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev))  
+  !$omp do
+  do ie=1,nen
+    if ((ie-nop>=1).and.(ie-nop<=nen)) then
+      ! Pi^<(hw) = \sum_E M G<(E) M G>(E-hw)
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,G_greater(:,:,ie-nop),nm_dev,cone,Pi_lesser,nm_dev)         
+      ! Pi^>(hw) = \sum_E M G>(E) M G<(E-hw)   
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,M,nm_dev,G_greater(:,:,ie),nm_dev,czero,B,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,M,nm_dev,czero,A,nm_dev) 
+      call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,A,nm_dev,G_lesser(:,:,ie-nop),nm_dev,cone,Pi_greater,nm_dev)             
+    endif
+  enddo  
+  !$omp end do
+  deallocate(A,B)
+  !$omp end parallel
+  Pi_lesser=Pi_lesser*dE
+  Pi_greater=Pi_greater*dE
+  !!
+  ! calculate PR
+  allocate(PR(nm_dev,nm_dev))
+  allocate(WR(nm_dev,nm_dev)) 
+  allocate(B(nm_dev,nm_dev))
+  allocate(A(nm_dev,nm_dev)) 
+  PR = czero ! PR
+  !$omp parallel default(none) private(i,ie) shared(nop,nen,PR,nm_dev,G_lesser,G_retarded)  
+  !$omp do
+  do i = 1, nm_dev        
+    do ie = max(nop+1,1),min(nen,nen+nop)                                                 
+      PR(i,i) = PR(i,i) + G_lesser(i,i,ie) * conjg(G_retarded(i,i,ie-nop)) +&
+                        & G_retarded(i,i,ie) * G_lesser(i,i,ie-nop)        
+    enddo
+  enddo    
+  !$omp end do
+  !$omp end parallel
+  dE = dcmplx(0.0d0, -( En(2) - En(1) ) / 2.0d0 / pi * spindeg )
+  PR=-PR*dE 
+  !
+  A = czero ! PR static
+  !$omp parallel default(none) private(i,ie) shared(nop,nen,A,nm_dev,G_lesser,G_retarded)  
+  !$omp do
+  do i = 1, nm_dev        
+    do ie = 1,nen                                                
+      A(i,i) = A(i,i) + G_lesser(i,i,ie) * conjg(G_retarded(i,i,ie)) +&
+                      & G_retarded(i,i,ie) * G_lesser(i,i,ie)        
+    enddo
+  enddo    
+  !$omp end do
+  !$omp end parallel
+  A=A*dE
+  ! calculate WR static
+  !! B = I - V P^r
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,V,nm_dev,A,nm_dev,czero,B,nm_dev)
+  !
+  do i=1,nm_dev
+     B(i,i) = 1.0d0 + B(i,i)
+  enddo    
+  !!!! calculate W^r = (I - V P^r)^-1 V    
+  call invert(B,nm_dev) 
+  call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,B,nm_dev,V,nm_dev,czero,WR,nm_dev) 
+  ! diagonal approximation BSE
+  do i=1,nm_dev
+    Pi_lesser(i,i)=Pi_lesser(i,i) / (1.0d0 - WR(i,i)*PR(i,i)* dcmplx(0.0d0,1.0d0)) 
+    Pi_greater(i,i)=Pi_greater(i,i) / (1.0d0 - conjg(WR(i,i))*conjg(PR(i,i))* dcmplx(0.0d0,1.0d0)) 
+  enddo
+  !
+  Pi_retarded = dcmplx(0.0d0*dble(Pi_retarded),aimag(Pi_greater-Pi_lesser)/2.0d0)
+  deallocate(PR)
+  deallocate(A,B,WR)
+end subroutine calc_pi_gw_ephoton
+
+
+! calculate e-photon polarization self-energies in the monochromatic assumption, for independent electron-hole pair
 subroutine calc_pi_ephoton_monochromatic(nm_dev,length,nen,En,nop,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)
 integer,intent(in)::nm_dev,length,nen,nop
 real(8),intent(in)::en(nen)
@@ -479,7 +592,7 @@ do iter=0,niter
       P_greater=dE*P_greater
       P_retarded=dE*P_retarded
       ! calculate W
-      call green_calc_w(2,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+      call green_calc_w(0,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
       !      
       if (lwriteGF) then
         call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
@@ -1394,7 +1507,7 @@ do iter=0,niter
     endif
     !
     ! calculate W
-    call green_calc_w(0,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
       call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))

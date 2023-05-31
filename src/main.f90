@@ -24,7 +24,7 @@ complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
-integer :: nm_dev, iter, niter, nkz,ikz
+integer :: nm_dev, iter, niter, nkz,ikz,ndiag
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2)
 real(8) :: intensity,hw,midgap(2),polaris(3)
 num_vac=0 ! number of vacancies
@@ -488,7 +488,12 @@ if (ltrans) then
       Vii(:,:,i)=Vii(:,:,1)
       V1i(:,:,i)=V1i(:,:,1)
     enddo    
-    call green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,length,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+    if (ldiag) then
+      ndiag=1
+    else
+      ndiag=NB*NS
+    endif
+    call green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,length,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
     deallocate(Hii,H1i,Vii,V1i)
     deallocate(pot)
     deallocate(en)
