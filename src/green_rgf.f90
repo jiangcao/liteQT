@@ -18,6 +18,7 @@ real(8), parameter :: eps0=8.854d-12 ! C/V/m
 real(8), parameter :: c0=2.998d8 ! m/s
 real(8), parameter :: e0=1.6022d-19 ! C
 REAL(8), PARAMETER :: pi = 3.14159265359d0
+REAL(8), PARAMETER :: tpi = 3.14159265359d0*2.0d0
 
 CONTAINS
 
@@ -63,22 +64,24 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
   allocate(W_greater_i1(nm,nm,nx,nen))
   allocate(W_retarded_i1(nm,nm,nx,nen))  
   do iter=0,niter
+    print *,'+ iter=',iter
     !
-    print *, 'calc G'  
-    !$omp parallel default(none) private(ie) shared(nen,TEMP,nm,nx,En,mu,Hii,H1i,sigma_lesser_gw,sigma_greater_gw,sigma_r_gw,G_r,G_lesser,G_greater,tr,tre,cur,g_r_i1)    
-    !$omp do 
+    print *, 'calc G'      
     do ie=1,nen     
+      if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
       call green_RGF_RS(TEMP,nm,nx,En(ie),mu,Hii,H1i,sigma_lesser_gw(:,:,:,ie),sigma_greater_gw(:,:,:,ie),&
                       & sigma_r_gw(:,:,:,ie),g_lesser(:,:,:,ie),g_greater(:,:,:,ie),g_r(:,:,:,ie),tr(ie),&
                       & tre(ie),cur(:,:,:,ie),g_r_i1(:,:,:,ie)) 
     enddo
-    !$omp end do 
-    !$omp end parallel    
+    !
     call write_spectrum('gw_ldos',iter,g_r,nen,En,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum('gw_ndos',iter,g_lesser,nen,En,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
     call write_spectrum('gw_pdos',iter,g_greater,nen,En,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))       
     call write_transmission_spectrum('gw_trL',iter,tr(:)*spindeg,nen,En)
     call write_transmission_spectrum('gw_trR',iter,tre(:)*spindeg,nen,En)
+    open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
+    write(101,'(I4,2E16.6)') iter, sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg), sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+    close(101)
     g_r = dcmplx( 0.0d0*dble(g_r), aimag(g_r))
     g_lesser = dcmplx( 0.0d0*dble(g_lesser), aimag(g_lesser))
     g_greater = dcmplx( 0.0d0*dble(g_greater), aimag(g_greater))
@@ -529,6 +532,7 @@ allocate(WG(NT,NT))
 allocate(B(NT,NT))
 allocate(M(NT,NT))  
 call block2full(Vii,V,nm,nx)
+call block2full(V1i,V,nm,nx,1)
 call block2full(PRii,PR,nm,nx)  
 call block2full(PLii,PL,nm,nx)  
 call block2full(PGii,PG,nm,nx)  
@@ -552,6 +556,7 @@ call full2block(WG,WGii,nm,nx)
 deallocate(B,M)  
 deallocate(V,PR,PL,PG,WR,WL,WG)
 end subroutine green_calc_w_full
+
 
 !!!! RGF for diagonal blocks of screened Coulomb GF W^r,<,>
 ! W^r = [I-VPr]^-1 V
@@ -1658,7 +1663,7 @@ do ie = 1,nen
         do ib=1,nb
             tr = tr+ G(ib+(k-1)*NB,ib+(k-1)*NB,j,ie)            
         end do
-        write(11,'(4E18.4)') j*Lx*NS+(k-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+        write(11,'(4E18.4)') (j-1)*Lx*NS+(k-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
       enddo
     end do
     write(11,*)    

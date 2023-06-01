@@ -491,7 +491,7 @@ print *,'dE=',(en(2)-en(1))
 ! build the energy vector for P and W
 dE= En(2)-En(1) 
 nnop1=floor(min(encut(1),Egap)/dble(dE)) ! intraband exclude encut(1), include 0 
-nnop2=floor((encut(2) - Egap)/dble(dE))  ! interband , include Egap
+nnop2=floor((min(encut(2),(maxval(En)-minval(En))) - Egap)/dble(dE))  ! interband , include Egap
 nnop=nnop1*2-1+nnop2*2 ! + and - freq.
 allocate(nops(nnop))
 allocate(wen(nnop))
@@ -564,7 +564,7 @@ do iter=0,niter
     print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)  
     nop=nops(iop)
     do iqz=1,nphiz
-      print *, ' iqz=', iqz
+      !print *, ' iqz=', iqz
       P_lesser=czero
       P_greater=czero
       P_retarded=czero
@@ -1507,7 +1507,7 @@ do iter=0,niter
     endif
     !
     ! calculate W
-    call green_calc_w(1,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
+    call green_calc_w(0,NB,NS,nm_dev,P_retarded,P_lesser,P_greater,V,W_retarded,W_lesser,W_greater)
     !
     if (lwriteGF) then
       call write_matrix('W_r',0,W_retarded(:,:),wen(iop),length,NB,(/1.0d0,1.0d0/))
@@ -2220,9 +2220,9 @@ do j = 1,length
         tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib)            
     end do
     if (.not.(present(E))) then
-     write(11,'(3E18.4)') j*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+     write(11,'(3E18.4)') (j-1)*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     else
-     write(11,'(4E18.4)') j*Lx, E, dble(tr)*coeff(1), aimag(tr)*coeff(2)         
+     write(11,'(4E18.4)') (j-1)*Lx, E, dble(tr)*coeff(1), aimag(tr)*coeff(2)         
     endif
 end do
 write(11,*)
@@ -2244,7 +2244,7 @@ do ie = 1,nen
         do ib=1,nb
             tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie)            
         end do
-        write(11,'(4E18.4)') j*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+        write(11,'(4E18.4)') (j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     end do
     write(11,*)    
 end do
@@ -2266,7 +2266,7 @@ subroutine write_spectrum_block(dataset,i,G,nen,en,length,NB,Lx,coeff)
           do ib=1,nb
               tr = tr+ G(ib,ib,j,ie)            
           end do
-          write(11,'(4E18.4)') j*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+          write(11,'(4E18.4)') (j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
       end do
       write(11,*)    
   end do
@@ -2376,7 +2376,7 @@ do ie = 1,nen
             enddo
           enddo                        
         end do
-        write(11,'(3E18.4)') dble(j)*Lx, en(ie), tr
+        write(11,'(3E18.4)') dble(j-1)*Lx, en(ie), tr
     end do
     write(11,*)    
 end do
@@ -2401,7 +2401,7 @@ do ie = 1,nen
           enddo
         enddo
         tr=tr/dble(nkz)
-        write(11,'(4E18.4)') j*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+        write(11,'(4E18.4)') (j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     end do
     write(11,*)    
 enddo
