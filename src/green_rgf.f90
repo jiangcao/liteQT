@@ -76,7 +76,8 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
     !
     call write_spectrum('gw_ldos',iter,g_r,nen,En,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum('gw_ndos',iter,g_lesser,nen,En,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
-    call write_spectrum('gw_pdos',iter,g_greater,nen,En,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))       
+    call write_spectrum('gw_pdos',iter,g_greater,nen,En,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
+    call write_spectrum('gw_Jdens',iter,cur,nen,En,nx,NB,NS,Lx,(/1.0d0,1.0d0/))         
     call write_transmission_spectrum('gw_trL',iter,tr(:)*spindeg,nen,En)
     call write_transmission_spectrum('gw_trR',iter,tre(:)*spindeg,nen,En)
     open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
@@ -531,6 +532,10 @@ allocate(WL(NT,NT))
 allocate(WG(NT,NT))
 allocate(B(NT,NT))
 allocate(M(NT,NT))  
+V=czero
+PR=czero
+PL=czero
+PG=czero
 call block2full(Vii,V,nm,nx)
 call block2full(V1i,V,nm,nx,1)
 call block2full(PRii,PR,nm,nx)  

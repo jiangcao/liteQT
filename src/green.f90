@@ -559,9 +559,9 @@ do iter=0,niter
   if (lwriteGF) ndiag=nm_dev
   print *,'ndiag=',min(ndiag,nm_dev)
   !
-  print *,'   i / n :  Nop   Eop (eV)'
+  !print *,'   i / n :  Nop   Eop (eV)'
   do iop=1,nnop        
-    print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)  
+    !print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)  
     nop=nops(iop)
     do iqz=1,nphiz
       !print *, ' iqz=', iqz
@@ -740,6 +740,9 @@ do iter=0,niter
   call write_current_spectrum_summed_over_kz('Jdens_',iter,cur_k,nen,En,nphiz,length,NB,Lx)
   call write_current('I',iter,sumtot_cur,length,NB,NS,Lx)
   call write_current('EI',iter,sumtot_ecur,length,NB,NS,Lx)
+  G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
+  G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
+  G_greater=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
   !        
   print *, 'calc P'
   !
@@ -766,10 +769,9 @@ do iter=0,niter
               ikzd=ikz-iqz + nphiz/2
               if (ikzd<1) ikzd=ikzd+nphiz
               if (ikzd>nphiz) ikzd=ikzd-nphiz
-              P_lesser(i,l:h,iop,iqz) = P_lesser(i,l:h,iop,iqz) + dE* G_lesser(i,l:h,ie,ikz) * G_greater(l:h,i,ie-nop,ikzd)
-              P_greater(i,l:h,iop,iqz) = P_greater(i,l:h,iop,iqz) + dE* G_greater(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikzd)        
-              P_retarded(i,l:h,iop,iqz) = P_retarded(i,l:h,iop,iqz) + &
-                  & dE* (G_lesser(i,l:h,ie,ikz) * conjg(G_retarded(i,l:h,ie-nop,ikzd)) + G_retarded(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikzd))        
+              P_lesser(i,l:h,iop,iqz) = P_lesser(i,l:h,iop,iqz) + G_lesser(i,l:h,ie,ikz) * G_greater(l:h,i,ie-nop,ikzd)
+              P_greater(i,l:h,iop,iqz) = P_greater(i,l:h,iop,iqz) + G_greater(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikzd)        
+              P_retarded(i,l:h,iop,iqz) = P_retarded(i,l:h,iop,iqz) + (G_lesser(i,l:h,ie,ikz) * conjg(G_retarded(i,l:h,ie-nop,ikzd)) + G_retarded(i,l:h,ie,ikz) * G_lesser(l:h,i,ie-nop,ikzd))        
           enddo
         enddo
       enddo
@@ -777,6 +779,10 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
+  dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi ) * spindeg  
+  P_lesser=dE*P_lesser
+  P_greater=dE*P_greater
+  P_retarded=dE*P_retarded
   call write_spectrum_summed_over_kz('PR',iter,P_retarded,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('PL',iter,P_lesser  ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('PG',iter,P_greater ,nen,En-en(nen/2),nphiz,length,NB,Lx,(/1.0,1.0/))
@@ -784,6 +790,7 @@ do iter=0,niter
   print *, 'calc W'
   !
   do nop=-nopmax+nen/2,nopmax+nen/2   
+    if (mod(nop,100)==0) print '(I5,A,I5)',nop,'/',nen
     do iqz=1,nphiz
       call green_calc_w(2,NB,NS,nm_dev,P_retarded(:,:,nop,iqz),P_lesser(:,:,nop,iqz),P_greater(:,:,nop,iqz),V,W_retarded(:,:,nop,iqz),W_lesser(:,:,nop,iqz),W_greater(:,:,nop,iqz))
     enddo
@@ -800,8 +807,7 @@ do iter=0,niter
   nopmax=nen/2-10
   Sig_greater_new = dcmplx(0.0d0,0.0d0)
   Sig_lesser_new = dcmplx(0.0d0,0.0d0)
-  Sig_retarded_new = dcmplx(0.0d0,0.0d0)
-  dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)    
+  Sig_retarded_new = dcmplx(0.0d0,0.0d0)      
   ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)
   !$omp parallel default(none) private(l,h,nop,ie,i,j,iop,ikz,ikzd,iqz) shared(ndiag,nopmax,Sig_lesser_new,Sig_greater_new,Sig_retarded_new,W_lesser,W_greater,W_retarded,nen,En,nm_dev,G_lesser,G_greater,G_retarded,dE,nphiz)
   !$omp do
@@ -819,9 +825,9 @@ do iter=0,niter
               h=min(nm_dev,i+ndiag)       
               Sig_lesser_new(i,l:h,ie,ikz)=Sig_lesser_new(i,l:h,ie,ikz)+G_lesser(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz)
               Sig_greater_new(i,l:h,ie,ikz)=Sig_greater_new(i,l:h,ie,ikz)+G_greater(i,l:h,ie-nop,ikzd)*W_greater(i,l:h,iop,iqz)
-              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_lesser(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz) 
-              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_retarded(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz) 
-              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_retarded(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz)          
+              Sig_retarded_new(i,l:h,ie,ikz)=Sig_retarded_new(i,l:h,ie,ikz)+G_lesser(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz) &
+                                             +G_retarded(i,l:h,ie-nop,ikzd)*W_lesser(i,l:h,iop,iqz) &
+                                             +G_retarded(i,l:h,ie-nop,ikzd)*W_retarded(i,l:h,iop,iqz)          
             enddo      
           enddo
         endif
@@ -830,6 +836,7 @@ do iter=0,niter
   enddo
   !$omp end do
   !$omp end parallel
+  dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)
   Sig_lesser_new = Sig_lesser_new  * dE
   Sig_greater_new= Sig_greater_new * dE
   Sig_retarded_new=Sig_retarded_new* dE
@@ -1009,9 +1016,9 @@ do iter=0,niter
   if (lwriteGF) ndiag=nm_dev
   print *,'ndiag=',min(ndiag,nm_dev)
   !
-  print *,'   i / n :  Nop   Eop (eV)'
+  !print *,'   i / n :  Nop   Eop (eV)'
   do iop=1,nnop        
-    print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
+    !print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
     nop=nops(iop)
     P_lesser = czero
     P_greater = czero
@@ -1477,9 +1484,9 @@ do iter=0,niter
   if (lwriteGF) ndiag=nm_dev
   print *,'ndiag=',min(ndiag,nm_dev)
   !
-  print *,'   i / n :  Nop   Eop (eV)'
+  !print *,'   i / n :  Nop   Eop (eV)'
   do iop=1,nnop        
-    print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
+    !print '(I5,A,I5,A,I5,F8.3)',iop,'/',nnop,':',nops(iop),wen(iop)    
     nop=nops(iop)
     P_lesser = czero
     P_greater = czero
@@ -2401,7 +2408,7 @@ do ie = 1,nen
           enddo
         enddo
         tr=tr/dble(nkz)
-        write(11,'(4E18.4)') (j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+        write(11,'(4E18.4)') dble(j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     end do
     write(11,*)    
 enddo
