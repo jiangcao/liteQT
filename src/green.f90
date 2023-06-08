@@ -918,8 +918,12 @@ REAL(8), PARAMETER :: pi = 3.14159265359d0
 complex(8) :: dE
 real(8)::nelec(2),mu(2),pelec(2)
 print *,'============ green_solve_gw_3D ============'
-allocate(siglead(NB*NS,NB*NS,nen,2,nphiz))
-siglead=dcmplx(0.0d0,0.0d0)
+allocate(siglead(NB*NS,NB*NS,nen,2,nphiy*nphiz))
+! get leads sigma
+do ikz=1, nphiy*nphiz
+  siglead(:,:,:,1,ikz) = Sig_retarded(1:NB*NS,1:NB*NS,:,ikz)
+  siglead(:,:,:,2,ikz) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:,ikz)  
+enddo
 allocate(B(nm_dev,nm_dev))
 allocate(tot_cur(nm_dev,nm_dev))
 allocate(tot_ecur(nm_dev,nm_dev))
