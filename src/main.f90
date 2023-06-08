@@ -146,13 +146,13 @@ if (ltrans) then
       allocate(G_lesser(nb*length,nb*length,nen,nkz))
       allocate(G_greater(nb*length,nb*length,nen,nkz))      
       
-      allocate(P_retarded(nb*length,nb*length,nen,nkz))
-      allocate(P_lesser(nb*length,nb*length,nen,nkz))
-      allocate(P_greater(nb*length,nb*length,nen,nkz))    
+!      allocate(P_retarded(nb*length,nb*length,nen,nkz))
+!      allocate(P_lesser(nb*length,nb*length,nen,nkz))
+!      allocate(P_greater(nb*length,nb*length,nen,nkz))    
       
-      allocate(W_retarded(nb*length,nb*length,nen,nkz))
-      allocate(W_lesser(nb*length,nb*length,nen,nkz))
-      allocate(W_greater(nb*length,nb*length,nen,nkz))    
+!      allocate(W_retarded(nb*length,nb*length,nen,nkz))
+!      allocate(W_lesser(nb*length,nb*length,nen,nkz))
+!      allocate(W_greater(nb*length,nb*length,nen,nkz))    
       
       allocate(Sig_retarded(nb*length,nb*length,nen,nkz))
       allocate(Sig_lesser(nb*length,nb*length,nen,nkz))
@@ -208,16 +208,16 @@ if (ltrans) then
       midgap=(/ (CBM+VBM)/2.0d0,(CBM+VBM)/2.0d0 /)
       midgap= midgap + (/ pot(1), pot(length)/)
       !
-      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
-        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
-        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
-!      call green_solve_gw_2D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-!          alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
-!          G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-!          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg)
-      deallocate(pot,en)
+!      call green_solve_gw_2D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+!        alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
+!        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+!        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+!        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+      call green_solve_gw_2D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          alpha_mix,nen,En,nb,ns,nkz,Ham,H00ld,H10ld,T,V,&
+          G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg)
+      deallocate(pot)
       deallocate(H00ld)
       deallocate(H10ld) 
       deallocate(Ham)    
@@ -225,12 +225,12 @@ if (ltrans) then
       deallocate(G_retarded)
       deallocate(G_lesser)
       deallocate(G_greater)
-      deallocate(P_retarded)
-      deallocate(P_lesser)
-      deallocate(P_greater)
-      deallocate(W_retarded)
-      deallocate(W_lesser)
-      deallocate(W_greater)
+!      deallocate(P_retarded)
+!      deallocate(P_lesser)
+!      deallocate(P_greater)
+!      deallocate(W_retarded)
+!      deallocate(W_lesser)
+!      deallocate(W_greater)
       deallocate(Sig_retarded)
       deallocate(Sig_lesser)
       deallocate(Sig_greater)
