@@ -29,6 +29,7 @@ public :: w90_free_memory, w90_load_from_file,w90_MAT_DEF
 public :: NB, Lx, Ly,Lz, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_MAT_DEF_full_device, w90_bare_coulomb_full_device
+public :: w90_bare_coulomb_blocks
 
 CONTAINS
 

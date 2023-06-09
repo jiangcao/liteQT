@@ -1,7 +1,7 @@
 PROGRAM main
-USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF
+USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks
 use green, only : green_calc_g, green_solve_gw_3D
-use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS
+use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,nky,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac,iky,ik
@@ -9,7 +9,7 @@ integer,allocatable:: orb_vac(:)
 real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
 complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:),tmpV(:,:)
-complex(8), allocatable,dimension(:,:,:) :: Hii,H1i,Vii,V1i
+complex(8), allocatable,dimension(:,:,:,:) :: Hii,H1i,Vii,V1i
 complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:),invV(:,:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: G_retarded,G_lesser,G_greater
 complex(8), allocatable,dimension(:,:,:,:) :: P_retarded,P_lesser,P_greater
@@ -24,7 +24,7 @@ complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
-integer :: nm_dev, iter, niter, nkz,ikz,ndiag
+integer :: nm_dev, iter, niter, nkz,ikz,ndiag,nk
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2),dky
 real(8) :: intensity,hw,midgap(2),polaris(3)
 num_vac=0 ! number of vacancies
@@ -255,8 +255,86 @@ if (ltrans) then
       deallocate(en)    
       deallocate(V)
     endif
-  endif
-endif
+   else
+    ! Long device, use RGF
+    print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'    
+    print *, 'Build the full device H'
+    print *, 'length=',length*NS
+    nm=NB*NS
+    nk=nky*nkz
+    allocate(Hii(nm,nm,length,nk))
+    allocate(H1i(nm,nm,length,nk))
+    allocate(Vii(nm,nm,length,nk))
+    allocate(V1i(nm,nm,length,nk))    
+    allocate(pot(length))    
+    if (nkz>1) then
+      dkz=2.0d0*pi/Lz / dble(nkz-1)
+    else
+      dkz=pi/Lz
+    endif
+    if (nky>1) then
+      dky=2.0d0*pi/Ly / dble(nky-1)
+    else
+      dky=pi/Ly
+    endif
+    do iky=1,nky
+      ky=-pi/Ly + dble(iky-1)*dky
+      do ikz=1,nkz
+        kz=-pi/Lz + dble(ikz-1)*dkz
+        ik=ikz+(iky-1)*nkz
+        ! get Ham blocks
+        call w90_MAT_DEF(Hii(:,:,1,ik),H1i(:,:,1,ik),0.0d0, ky,kz,NS)
+        ! build device Ham 
+        do i=2,length
+          Hii(:,:,i,ik)=Hii(:,:,1,ik)
+          H1i(:,:,i,ik)=H1i(:,:,1,ik)
+        enddo
+      enddo
+    enddo
+    pot(:) = 0.0d0
+    if (lreadpot) then
+        open(unit=10,file='pot_dat',status='unknown')
+        do i = 1,length
+            read(10,*) pot(i)
+        end do
+        close(10)
+        pot=pot*potscale
+    end if             
+    allocate(en(nen))
+    en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
+    ! add on potential    
+    do ik=1,nk
+      do j = 1,length
+        do ib = 1,nb
+          Hii(ib,ib,j,ik)=Hii(ib,ib,j,ik) + pot(j)
+        enddo
+      enddo      
+    enddo
+    do iky=1,nky
+      ky=-pi/Ly + dble(iky-1)*dky
+      do ikz=1,nkz
+        kz=-pi/Lz + dble(ikz-1)*dkz
+        ik=ikz+(iky-1)*nkz
+        ! coulomb operator blocks
+        call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
+        !
+        do i=2,length
+          Vii(:,:,i,ik)=Vii(:,:,1,ik)
+          V1i(:,:,i,ik)=V1i(:,:,1,ik)
+        enddo
+      enddo
+    enddo
+    if (ldiag) then
+      ndiag=1
+    else
+      ndiag=NB*NS
+    endif
+    call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+    deallocate(Hii,H1i,Vii,V1i)
+    deallocate(pot)
+    deallocate(en)
+  endif        
+end if
 if (allocated(B)) deallocate(B)
 if (allocated(orb_vac)) deallocate(orb_vac)
 call w90_free_memory

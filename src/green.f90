@@ -954,12 +954,12 @@ do iter=0,niter
   sumcur=sumcur/dble(nphiy)/dble(nphiz)
   sumtot_cur=sumtot_cur/dble(nphiy)/dble(nphiz)
   sumtot_ecur=sumtot_ecur/dble(nphiy)/dble(nphiz)
-  call write_spectrum_summed_over_kz('ldos',iter,G_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
-  call write_spectrum_summed_over_kz('ndos',iter,G_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
-  call write_spectrum_summed_over_kz('pdos',iter,G_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
+  call write_spectrum_summed_over_kz('gw_ldos',iter,G_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum_summed_over_kz('gw_ndos',iter,G_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum_summed_over_kz('gw_pdos',iter,G_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,-1.0d0/))
   call write_current_spectrum('gw_Jdens',iter,sumcur,nen,en,length,NB,Lx)
-  call write_current('I',iter,sumtot_cur,length,NB,NS,Lx)
-  call write_current('EI',iter,sumtot_ecur,length,NB,NS,Lx)
+  call write_current('gw_I',iter,sumtot_cur,length,NB,NS,Lx)
+  call write_current('gw_EI',iter,sumtot_ecur,length,NB,NS,Lx)
   !
   G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
   G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
@@ -1113,7 +1113,7 @@ do iter=0,niter
       call expand_size_bycopy(Sig_greater(:,:,ie,iqz),nm_dev,NB,2)
     enddo
   enddo
-  call write_spectrum_summed_over_kz('SigR',iter,Sig_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum_summed_over_kz('gw_SigR',iter,Sig_retarded,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0d0,1.0d0/))
 !  call write_spectrum_summed_over_kz('SigL',iter,Sig_lesser,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
 !  call write_spectrum_summed_over_kz('SigG',iter,Sig_greater,nen,En,nphiy*nphiz,length,NB,Lx,(/1.0,1.0/))
 end do  
