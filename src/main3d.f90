@@ -98,21 +98,21 @@ if (ltrans) then
       allocate(T(nb*ns,nb*length,2,nky*nkz))
       T = dcmplx(0.0d0,0.0d0)
       if (nkz>1) then
-        dkz=2.0d0*pi/Lz / dble(nkz-1)
+        dkz=2.0d0*pi/Lz / dble(nkz)
       else
         dkz=pi/Lz
       endif
       if (nky>1) then
-        dky=2.0d0*pi/Ly / dble(nky-1)
+        dky=2.0d0*pi/Ly / dble(nky)
       else
         dky=pi/Ly
       endif
       ! contact Ham blocks
       open(unit=11,file='ek.dat',status='unknown')
       do iky=1,nky
-        ky=-pi/Ly + dble(iky-1)*dky
+        ky=-pi/Ly + dble(iky)*dky
         do ikz=1,nkz
-          kz=-pi/Lz + dble(ikz-1)*dkz
+          kz=-pi/Lz + dble(ikz)*dkz
           ik=ikz+(iky-1)*nkz
           call w90_MAT_DEF(H00ld(:,:,1,ik),H10ld(:,:,1,ik),0.0d0, ky,kz,NS)
           !
@@ -182,9 +182,9 @@ if (ltrans) then
       en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
 
       do iky=1,nky
-        ky=-pi/Ly + dble(iky-1)*dky
+        ky=-pi/Ly + dble(iky)*dky
         do ikz=1,nkz
-          kz=-pi/Lz + dble(ikz-1)*dkz
+          kz=-pi/Lz + dble(ikz)*dkz
           ik=ikz+(iky-1)*nkz
           ! device Ham matrix
           call w90_MAT_DEF_full_device(Ham(:,:,ik),ky,kz,length)      
@@ -259,28 +259,29 @@ if (ltrans) then
     ! Long device, use RGF
     print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'    
     print *, 'Build the full device H'
-    print *, 'length=',length*NS
+    print *, 'length=',length*NS,'uc =',length*NS*Lx/1.0d1,'(nm)'
     nm=NB*NS
     nk=nky*nkz
     allocate(Hii(nm,nm,length,nk))
     allocate(H1i(nm,nm,length,nk))
+!    allocate(V(nm*length,nm*length,nky*nkz))   
     allocate(Vii(nm,nm,length,nk))
     allocate(V1i(nm,nm,length,nk))    
     allocate(pot(length))    
     if (nkz>1) then
-      dkz=2.0d0*pi/Lz / dble(nkz-1)
+      dkz=2.0d0*pi/Lz / dble(nkz)
     else
       dkz=pi/Lz
     endif
     if (nky>1) then
-      dky=2.0d0*pi/Ly / dble(nky-1)
+      dky=2.0d0*pi/Ly / dble(nky)
     else
       dky=pi/Ly
     endif
     do iky=1,nky
-      ky=-pi/Ly + dble(iky-1)*dky
+      ky=-pi/Ly + dble(iky)*dky
       do ikz=1,nkz
-        kz=-pi/Lz + dble(ikz-1)*dkz
+        kz=-pi/Lz + dble(ikz)*dkz
         ik=ikz+(iky-1)*nkz
         ! get Ham blocks
         call w90_MAT_DEF(Hii(:,:,1,ik),H1i(:,:,1,ik),0.0d0, ky,kz,NS)
@@ -291,6 +292,36 @@ if (ltrans) then
         enddo
       enddo
     enddo
+    !
+    open(unit=11,file='ek.dat',status='unknown')
+    allocate(H00(nb*ns,nb*ns))
+    allocate(phix(nkx))
+    allocate(ek(nb*ns,nkx))
+    do iky=1,nky
+      ky=-pi/Ly + dble(iky)*dky
+      do ikz=1,nkz
+          kz=-pi/Lz + dble(ikz)*dkz
+          ik=ikz+(iky-1)*nkz          
+          ! write bands into ek.dat                                      
+          phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
+          do i=1,nkx
+              H00(:,:) = Hii(:,:,1,ik)                          
+              H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,1,ik)
+              H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,1,ik)))
+              ek(:,i) = eig(NB*NS,H00)
+          enddo              
+          do j=1,nb*NS
+              do i=1,nkx
+                  write(11,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
+              enddo
+              write(11,*)
+          enddo                      
+      enddo
+    enddo
+    deallocate(H00)    
+    deallocate(ek,phix)            
+    close(11)
+    !
     pot(:) = 0.0d0
     if (lreadpot) then
         open(unit=10,file='pot_dat',status='unknown')
@@ -311,9 +342,9 @@ if (ltrans) then
       enddo      
     enddo
     do iky=1,nky
-      ky=-pi/Ly + dble(iky-1)*dky
+      ky=-pi/Ly + dble(iky)*dky
       do ikz=1,nkz
-        kz=-pi/Lz + dble(ikz-1)*dkz
+        kz=-pi/Lz + dble(ikz)*dkz
         ik=ikz+(iky-1)*nkz
         ! coulomb operator blocks
         call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
@@ -324,13 +355,24 @@ if (ltrans) then
         enddo
       enddo
     enddo
+!    do iky=1,nky
+!      ky=-pi/Ly + dble(iky)*dky
+!      do ikz=1,nkz
+!          kz=-pi/Lz + dble(ikz)*dkz
+!          ik=ikz+(iky-1)*nkz          
+!          ! Coulomb operator
+!          call w90_bare_coulomb_full_device(V(:,:,ik),ky,kz,length*NS,eps_screen,r0,ldiag)      
+!      enddo
+!    enddo
     if (ldiag) then
-      ndiag=1
+      ndiag=0
     else
       ndiag=NB*NS
     endif
     call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
-    deallocate(Hii,H1i,Vii,V1i)
+    deallocate(Hii,H1i)
+    !deallocate(V)
+    deallocate(Vii,V1i)
     deallocate(pot)
     deallocate(en)
   endif        

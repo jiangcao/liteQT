@@ -97,11 +97,11 @@ if (ltrans) then
       allocate(H10ld(nb*NS,nb*NS,2,nkz))
       allocate(T(nb*ns,nb*length,2,nkz))
       T = dcmplx(0.0d0,0.0d0)
-      dkz=2.0d0*pi/Ly / dble(nkz-1)
+      dkz=2.0d0*pi/Ly / dble(nkz)
       ! contact Ham blocks
       open(unit=11,file='ek.dat',status='unknown')
       do ikz=1,nkz
-        kz=-pi/Ly + dble(ikz-1)*dkz
+        kz=-pi/Ly + dble(ikz)*dkz
         call w90_MAT_DEF(H00ld(:,:,1,ikz),H10ld(:,:,1,ikz),0.0d0, kz,NS)
         !
         H10ld(:,:,2,ikz) = H10ld(:,:,1,ikz)
@@ -169,7 +169,7 @@ if (ltrans) then
       en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
       
       do ikz=1,nkz
-        kz=-pi/Ly + dble(ikz-1)*dkz
+        kz=-pi/Ly + dble(ikz)*dkz
         ! device Ham matrix
         call w90_MAT_DEF_full_device(Ham(:,:,ikz),kz,length)      
         ! Coulomb operator
@@ -464,32 +464,34 @@ if (ltrans) then
           G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
           Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg,writeGF=.false.)
       endif
+      
+      
+      deallocate(pot)
+      deallocate(H00ld)
+      deallocate(H10ld) 
+      deallocate(Ham)    
+      deallocate(T)
+      deallocate(G_retarded)
+      deallocate(G_lesser)
+      deallocate(G_greater)
+ !     deallocate(P_retarded)
+ !     deallocate(P_lesser)
+ !     deallocate(P_greater)
+ !     deallocate(W_retarded)
+ !     deallocate(W_lesser)
+ !     deallocate(W_greater)
+      deallocate(Sig_retarded)
+      deallocate(Sig_lesser)
+      deallocate(Sig_greater)
+      deallocate(Sig_retarded_new)
+      deallocate(Sig_lesser_new)
+      deallocate(Sig_greater_new)
+      deallocate(en)    
+      deallocate(V)    
+      if (lephot) deallocate(Pmn)
+    
     endif 
-    
-    
-    deallocate(pot)
-    deallocate(H00ld)
-    deallocate(H10ld) 
-    deallocate(Ham)    
-    deallocate(T)
-    deallocate(G_retarded)
-    deallocate(G_lesser)
-    deallocate(G_greater)
- !   deallocate(P_retarded)
- !   deallocate(P_lesser)
- !   deallocate(P_greater)
- !   deallocate(W_retarded)
- !   deallocate(W_lesser)
- !   deallocate(W_greater)
-    deallocate(Sig_retarded)
-    deallocate(Sig_lesser)
-    deallocate(Sig_greater)
-    deallocate(Sig_retarded_new)
-    deallocate(Sig_lesser_new)
-    deallocate(Sig_greater_new)
-    deallocate(en)    
-    deallocate(V)    
-    if (lephot) deallocate(Pmn)
+        
   else
     ! Long device, use RGF
     print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'

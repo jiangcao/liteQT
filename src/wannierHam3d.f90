@@ -110,9 +110,12 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
         &floor(ham(i,2))-ymin+1,floor(ham(i,3))-zmin+1) = ham(i,6) + z1j*ham(i,7);
     end do    
     print *, 'Find CBM and VBM'
-    nkx=15
-    nky=15    
-    nkz=15
+    nkx=floor((1.0d0/Lx)/0.01d0)+1
+    nky=floor((1.0d0/Ly)/0.01d0)+1    
+    nkz=floor((1.0d0/Lz)/0.01d0)+1
+    if (nx==1) nkx=1
+    if (ny==1) nky=1
+    if (nz==1) nkz=1
     if (ny .eq. 1) then
         nky = 1
     end if
@@ -212,7 +215,7 @@ complex(8), dimension(NB,NB) :: Hii
         do l = 1,nkz
           kx = i*dkx - pi / Lx
           ky = j*dky - pi / Ly
-          kz = l*dky - pi / Lz
+          kz = l*dkz - pi / Lz
         
           call w90_MAT_DEF_3D(Hii, kx,ky,kz)    
         
@@ -314,7 +317,7 @@ END SUBROUTINE w90_MAT_DEF_full_device
 
 
 !!! construct the diagonal and off-diagonal blocks V(I,I), V(I+1,I)
-SUBROUTINE w90_bare_coulomb_blocks(Hii,H1i,kx, ky,kz,eps,r0,ns,ldiag)
+SUBROUTINE w90_bare_coulomb_blocks(Hii,H1i,kx, ky,kz,eps,r0,NS,ldiag)
 ! ky in [2pi/Ang]
 implicit none
 integer, intent(in) :: ns
@@ -327,20 +330,16 @@ integer :: i,j,k,l
 real(8), dimension(3) :: kv, r
 Hii(:,:) = zzero
 H1i(:,:) = zzero
+kv = kx*xhat + ky*yhat + kz*zhat
 do i = 1,ns
     do k = 1,ns    
         do j = ymin,ymax
-          do l = zmin,zmax
-            kv = kx*xhat + ky*yhat + kz*zhat
-            r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm                   
-            if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
-                Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
-                & bare_coulomb(i-k,j,l,eps,r0,ldiag) * exp(-z1j* dot_product(r,kv) )           
-            end if                 
-            if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                   
-                H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
-                & bare_coulomb(i-k,j,l,eps,r0,ldiag) * exp(-z1j* dot_product(r,kv) )            
-            end if
+          do l = zmin,zmax            
+            r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm                               
+            Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + &
+                    & bare_coulomb(i-k,j,l,eps,r0,ldiag) * exp(-z1j* dot_product(r,kv) )                                   
+            H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) = H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb) + & 
+                    & bare_coulomb(i-k+ns,j,l,eps,r0,ldiag) * exp(-z1j* dot_product(r,kv) )                        
           enddo
         end do        
     end do

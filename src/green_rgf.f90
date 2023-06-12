@@ -27,21 +27,22 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
   real(8),intent(in)::en(nen),temp(2),mu(2),Lx,alpha_mix,spindeg
   complex(8),intent(in),dimension(nm,nm,nx,nky*nkz)::Hii,H1i,Vii,V1i
+  !complex(8), intent(in):: V(nm*nx,nm*nx,nky*nkz)
   ! -------- local variables
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser,cur, g_r_i1
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
   complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser,P_greater,P_retarded
-  complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
+  !complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
   complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser,W_greater,W_retarded
-  complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
+  !complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
   complex(8),allocatable,dimension(:,:,:)::Sii
   real(8)::tr(nen,nky*nkz),tre(nen,nky*nkz)
   integer::ie,iter,i,ix,nopmax,nop,iop,l,h,io
   integer::ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,nk
-  complex(8)::dE
+  complex(8)::dE, B(nm,nm)
   !
-  print *,'====== green_rgf_solve_gw_3D ======'
+  print *,'======== green_rgf_solve_gw_3D ========'
   nk=nky*nkz
   allocate(g_r(nm,nm,nx,nen,nk))
   allocate(g_r_i1(nm,nm,nx,nen,nk))
@@ -57,27 +58,31 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   allocate(P_lesser(nm,nm,nx,nen,nk))
   allocate(P_greater(nm,nm,nx,nen,nk))
   allocate(P_retarded(nm,nm,nx,nen,nk))
-  allocate(P_lesser_1i(nm,nm,nx,nen,nk))
-  allocate(P_greater_1i(nm,nm,nx,nen,nk))
-  allocate(P_retarded_1i(nm,nm,nx,nen,nk))
+!  allocate(P_lesser_1i(nm,nm,nx,nen,nk))
+!  allocate(P_greater_1i(nm,nm,nx,nen,nk))
+!  allocate(P_retarded_1i(nm,nm,nx,nen,nk))
   allocate(W_lesser(nm,nm,nx,nen,nk))
   allocate(W_greater(nm,nm,nx,nen,nk))
   allocate(W_retarded(nm,nm,nx,nen,nk))
-  allocate(W_lesser_i1(nm,nm,nx,nen,nk))
-  allocate(W_greater_i1(nm,nm,nx,nen,nk))
-  allocate(W_retarded_i1(nm,nm,nx,nen,nk))  
+!  allocate(W_lesser_i1(nm,nm,nx,nen,nk))
+!  allocate(W_greater_i1(nm,nm,nx,nen,nk))
+!  allocate(W_retarded_i1(nm,nm,nx,nen,nk))  
   do iter=0,niter
     print *,'+ iter=',iter
     !
     print *, 'calc G'      
     do ik=1,nk
       print *, ' ik=', ik,'/',nk
+      !$omp parallel default(none) private(ie) shared(ik,nen,temp,nm,nx,en,mu,Hii,H1i,sigma_lesser_gw,sigma_greater_gw,sigma_r_gw,g_lesser,g_greater,g_r,tre,tr,cur,g_r_i1)    
+      !$omp do 
       do ie=1,nen     
-        if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
+        !if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
         call green_RGF_RS(TEMP,nm,nx,En(ie),mu,Hii(:,:,:,ik),H1i(:,:,:,ik),sigma_lesser_gw(:,:,:,ie,ik),sigma_greater_gw(:,:,:,ie,ik),&
                         & sigma_r_gw(:,:,:,ie,ik),g_lesser(:,:,:,ie,ik),g_greater(:,:,:,ie,ik),g_r(:,:,:,ie,ik),tr(ie,ik),&
                         & tre(ie,ik),cur(:,:,:,ie,ik),g_r_i1(:,:,:,ie,ik)) 
       enddo
+      !$omp end do 
+      !$omp end parallel
     enddo
     !
     call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
@@ -98,48 +103,50 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
     P_lesser = dcmplx(0.0d0,0.0d0)
     P_greater = dcmplx(0.0d0,0.0d0)    
     P_retarded = dcmplx(0.0d0,0.0d0)    
-    P_lesser_1i = dcmplx(0.0d0,0.0d0)
-    P_greater_1i = dcmplx(0.0d0,0.0d0)    
-    P_retarded_1i = dcmplx(0.0d0,0.0d0)  
+!    P_lesser_1i = dcmplx(0.0d0,0.0d0)
+!    P_greater_1i = dcmplx(0.0d0,0.0d0)    
+!    P_retarded_1i = dcmplx(0.0d0,0.0d0)  
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
-    !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky)    
-    !$omp do 
-    do iqy=1,nky
-      do iqz=1,nkz        
-        iq=iqz+(iqy-1)*nkz
-        do iky=1,nky
-          do ikz=1,nkz              
-            ik=ikz + (iky-1)*nkz
-            ikzd=ikz-iqz + nkz/2
-            ikyd=iky-iqy + nky/2
-            if (ikzd<1) ikzd=ikzd+nkz
-            if (ikzd>nkz) ikzd=ikzd-nkz
-            if (ikyd<1) ikyd=ikyd+nky
-            if (ikyd>nky) ikyd=ikyd-nky                
-            ikd=ikzd + (ikyd-1)*nkz
-            do ix=1,nx
-              do i=1,nm      
-                l=max(i-ndiag,1)
-                h=min(nm,i+ndiag)   
-                do nop=-nopmax,nopmax
-                  iop=nop+nen/2  
+    !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky,nk)    
+    !$omp do         
+    do nop=-nopmax,nopmax
+      iop=nop+nen/2  
+      do iqy=1,nky        
+        do iqz=1,nkz
+          iq=iqz + (iqy-1)*nkz
+          do ix=1,nx
+            do i=1,nm      
+              l=max(i-ndiag,1)
+              h=min(nm,i+ndiag)   
+              do iky=1,nky
+                do ikz=1,nkz              
+                  ik=ikz + (iky-1)*nkz
+                  ikzd=ikz-iqz + nkz/2
+                  ikyd=iky-iqy + nky/2
+                  if (ikzd<1)   ikzd=ikzd+nkz
+                  if (ikzd>nkz) ikzd=ikzd-nkz
+                  if (ikyd<1)   ikyd=ikyd+nky
+                  if (ikyd>nky) ikyd=ikyd-nky                
+                  if (nky==1)   ikyd=1
+                  if (nkz==1)   ikzd=1
+                  ikd=ikzd + (ikyd-1)*nkz
                   do ie = max(nop+1,1),min(nen,nen+nop)           
-                      P_lesser(i,l:h,ix,iop,iq) = P_lesser(i,l:h,ix,iop,iq) + G_lesser(i,l:h,ix,ie,ik) * G_greater(l:h,i,ix,ie-nop,ikd)
-                      P_greater(i,l:h,ix,iop,iq) = P_greater(i,l:h,ix,iop,iq) + G_greater(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd)        
-                      P_retarded(i,l:h,ix,iop,iq) = P_retarded(i,l:h,ix,iop,iq) + (G_lesser(i,l:h,ix,ie,ik) * conjg(G_r(i,l:h,ix,ie-nop,ikd)) & 
-                                                & + G_r(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd))        
+                    P_lesser(i,l:h,ix,iop,iq) = P_lesser(i,l:h,ix,iop,iq) + G_lesser(i,l:h,ix,ie,ik) * G_greater(l:h,i,ix,ie-nop,ikd)
+                    P_greater(i,l:h,ix,iop,iq) = P_greater(i,l:h,ix,iop,iq) + G_greater(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd)        
+                    P_retarded(i,l:h,ix,iop,iq) = P_retarded(i,l:h,ix,iop,iq) + (G_lesser(i,l:h,ix,ie,ik) * conjg(G_r(i,l:h,ix,ie-nop,ikd)) & 
+                                              & + G_r(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd))        
                   enddo
                 enddo
               enddo
             enddo
           enddo
         enddo
-      enddo
+      enddo      
     enddo          
     !$omp end do 
     !$omp end parallel
-    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	  
+    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg /dble(nk)
     P_lesser=P_lesser*dE
     P_greater=P_greater*dE
     P_retarded=P_retarded*dE
@@ -147,15 +154,16 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
     call write_spectrum_summed_over_k('gw_PL',iter,P_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_PG',iter,P_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     !
-    print *, 'calc W'
-    do ik=1,nk
-      print *, ' ik=', ik,'/',nk
-      do ie=1,nen
-        if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
-        call green_calc_w_full(0,nm,nx,Vii(:,:,:,ik),V1i(:,:,:,ik),p_lesser(:,:,:,ie,ik),p_greater(:,:,:,ie,ik),p_retarded(:,:,:,ie,ik),p_lesser_1i(:,:,:,ie,ik),p_greater_1i(:,:,:,ie,ik),p_retarded_1i(:,:,:,ie,ik),w_lesser(:,:,:,ie,ik),w_greater(:,:,:,ie,ik),w_retarded(:,:,:,ie,ik),w_lesser_i1(:,:,:,ie,ik),w_greater_i1(:,:,:,ie,ik),w_retarded_i1(:,:,:,ie,ik))
-        !call green_rgf_calc_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie),w_lesser_i1(:,:,:,ie),w_greater_i1(:,:,:,ie),w_retarded_i1(:,:,:,ie))
-        !call green_rgf_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
+    print *, 'calc W'                
+    do iq=1,nky*nkz
+      print *, ' iq=', iq,'/',nk
+      !$omp parallel default(none) private(nop) shared(iq,nopmax,nen,nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,w_lesser,w_greater,w_retarded)    
+      !$omp do 
+      do nop=-nopmax+nen/2,nopmax+nen/2 
+        call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
       enddo
+      !$omp end do 
+      !$omp end parallel
     enddo
     call write_spectrum_summed_over_k('gw_WR',iter,W_retarded,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
@@ -165,52 +173,67 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
     nopmax=nen/2-10
     Sigma_greater_new = dcmplx(0.0d0,0.0d0)
     Sigma_lesser_new = dcmplx(0.0d0,0.0d0)
-    Sigma_r_new = dcmplx(0.0d0,0.0d0)
-    dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi)    
+    Sigma_r_new = dcmplx(0.0d0,0.0d0)    
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
-    !$omp parallel default(none) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,w_lesser,w_greater,w_retarded,sigma_lesser_new,sigma_greater_new,sigma_r_new,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky)    
-    !$omp do
-    do iky=1,nky
-      do ikz=1,nkz        
-        ik=ikz+(iky-1)*nkz
-        do iqy=1,nky
-          do iqz=1,nkz              
-            iq=iqz + (iqy-1)*nkz
-            ikzd=ikz-iqz + nkz/2
-            ikyd=iky-iqy + nky/2            
-            if (ikzd<1) ikzd=ikzd+nkz
-            if (ikzd>nkz) ikzd=ikzd-nkz
-            if (ikyd<1) ikyd=ikyd+nky
-            if (ikyd>nky) ikyd=ikyd-nky                
-            ikd=ikzd + (ikyd-1)*nkz
-            do ix=1,nx
-              do i=1,nm
-                l=max(i-ndiag,1)
-                h=min(nm,i+ndiag)  
-                do ie=1,nen      
-                  do nop= -nopmax,nopmax    
-                    if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then  
-                      iop=nop+nen/2                
+    !$omp parallel default(none) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,w_lesser,w_greater,w_retarded,sigma_lesser_new,sigma_greater_new,sigma_r_new,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky,nk)    
+    !$omp do    
+    do ie=1,nen      
+      do iky=1,nky
+        do ikz=1,nkz
+          do nop= -nopmax,nopmax    
+            if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then   
+              ik=ikz+(iky-1)*nkz
+              do iqy=1,nky
+                do iqz=1,nkz              
+                  iq=iqz + (iqy-1)*nkz
+                  iop=nop+nen/2                
+                  ikzd=ikz-iqz + nkz/2
+                  ikyd=iky-iqy + nky/2            
+                  if (ikzd<1)   ikzd=ikzd+nkz
+                  if (ikzd>nkz) ikzd=ikzd-nkz
+                  if (ikyd<1)   ikyd=ikyd+nky
+                  if (ikyd>nky) ikyd=ikyd-nky        
+                  if (nky==1)   ikyd=1
+                  if (nkz==1)   ikzd=1        
+                  ikd=ikzd + (ikyd-1)*nkz
+                  do ix=1,nx
+                    do i=1,nm
+                      l=max(i-ndiag,1)
+                      h=min(nm,i+ndiag)                                                
                       Sigma_lesser_new(i,l:h,ix,ie,ik)=Sigma_lesser_new(i,l:h,ix,ie,ik)+G_lesser(i,l:h,ix,ie-nop,ikd)*W_lesser(i,l:h,ix,iop,iq)
                       Sigma_greater_new(i,l:h,ix,ie,ik)=Sigma_greater_new(i,l:h,ix,ie,ik)+G_greater(i,l:h,ix,ie-nop,ikd)*W_greater(i,l:h,ix,iop,iq)
                       Sigma_r_new(i,l:h,ix,ie,ik)=Sigma_r_new(i,l:h,ix,ie,ik)+G_lesser(i,l:h,ix,ie-nop,ikd)*W_retarded(i,l:h,ix,iop,iq) &
-                                                                    &  +G_r(i,l:h,ix,ie-nop,ikd)*W_lesser(i,l:h,ix,iop,iq) &
-                                                                    &  +G_r(i,l:h,ix,ie-nop,ikd)*W_retarded(i,l:h,ix,iop,iq)    
-                    endif
+                                                          &  +G_r(i,l:h,ix,ie-nop,ikd)*W_lesser(i,l:h,ix,iop,iq) &
+                                                          &  +G_r(i,l:h,ix,ie-nop,ikd)*W_retarded(i,l:h,ix,iop,iq)    
+                     enddo
                   enddo
                 enddo
-              enddo    
-            enddo
+              enddo
+            endif            
           enddo
         enddo
-      enddo
+      enddo      
     enddo
     !$omp end do
     !$omp end parallel
+    dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi) /dble(nk) 
     Sigma_lesser_new = Sigma_lesser_new  * dE
     Sigma_greater_new= Sigma_greater_new * dE
     Sigma_r_new=Sigma_r_new* dE
     Sigma_r_new = dcmplx( dble(Sigma_r_new), aimag(Sigma_greater_new-Sigma_lesser_new)/2.0d0 )    
+    ! symmetrize the selfenergies
+    do ie=1,nen
+      do ik=1,nk
+        do ix=1,nx
+          B(:,:)=transpose(Sigma_r_new(:,:,ix,ie,ik))
+          Sigma_r_new(:,:,ix,ie,ik) = (Sigma_r_new(:,:,ix,ie,ik) + B(:,:))/2.0d0    
+          B(:,:)=transpose(Sigma_lesser_new(:,:,ix,ie,ik))
+          Sigma_lesser_new(:,:,ix,ie,ik) = (Sigma_lesser_new(:,:,ix,ie,ik) + B(:,:))/2.0d0
+          B(:,:)=transpose(Sigma_greater_new(:,:,ix,ie,ik))
+          Sigma_greater_new(:,:,ix,ie,ik) = (Sigma_greater_new(:,:,ix,ie,ik) + B(:,:))/2.0d0
+        enddo
+      enddo
+    enddo
     ! mixing with the previous one
     Sigma_r_gw= Sigma_r_gw+ alpha_mix * (Sigma_r_new -Sigma_r_gw)
     Sigma_lesser_gw  = Sigma_lesser_gw+ alpha_mix * (Sigma_lesser_new -Sigma_lesser_gw)
@@ -234,9 +257,9 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
   deallocate(sigma_lesser_new,sigma_greater_new,sigma_r_new)   
   deallocate(P_retarded,P_lesser,P_greater)
-  deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
+  !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
   deallocate(W_retarded,W_lesser,W_greater)
-  deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
+  !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
 end subroutine green_rgf_solve_gw_3d
 
 
@@ -249,9 +272,9 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
   complex(8),allocatable,dimension(:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
   complex(8),allocatable,dimension(:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
   complex(8),allocatable,dimension(:,:,:,:)::P_lesser,P_greater,P_retarded
-  complex(8),allocatable,dimension(:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
+  !complex(8),allocatable,dimension(:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
   complex(8),allocatable,dimension(:,:,:,:)::W_lesser,W_greater,W_retarded
-  complex(8),allocatable,dimension(:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
+  !complex(8),allocatable,dimension(:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
   complex(8),allocatable,dimension(:,:,:)::Sii
   real(8)::tr(nen),tre(nen)
   integer::ie,iter,i,ix,nopmax,nop,iop,l,h,io
@@ -272,15 +295,15 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
   allocate(P_lesser(nm,nm,nx,nen))
   allocate(P_greater(nm,nm,nx,nen))
   allocate(P_retarded(nm,nm,nx,nen))
-  allocate(P_lesser_1i(nm,nm,nx,nen))
-  allocate(P_greater_1i(nm,nm,nx,nen))
-  allocate(P_retarded_1i(nm,nm,nx,nen))
+  !allocate(P_lesser_1i(nm,nm,nx,nen))
+  !allocate(P_greater_1i(nm,nm,nx,nen))
+  !allocate(P_retarded_1i(nm,nm,nx,nen))
   allocate(W_lesser(nm,nm,nx,nen))
   allocate(W_greater(nm,nm,nx,nen))
   allocate(W_retarded(nm,nm,nx,nen))
-  allocate(W_lesser_i1(nm,nm,nx,nen))
-  allocate(W_greater_i1(nm,nm,nx,nen))
-  allocate(W_retarded_i1(nm,nm,nx,nen))  
+  !allocate(W_lesser_i1(nm,nm,nx,nen))
+  !allocate(W_greater_i1(nm,nm,nx,nen))
+  !allocate(W_retarded_i1(nm,nm,nx,nen))  
   do iter=0,niter
     print *,'+ iter=',iter
     !
@@ -307,13 +330,13 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
     !        
     print *, 'calc P'    
     nopmax=nen/2-10  
-    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	  
+    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg   
     P_lesser(:,:,:,:) = dcmplx(0.0d0,0.0d0)
     P_greater(:,:,:,:) = dcmplx(0.0d0,0.0d0)    
     P_retarded(:,:,:,:) = dcmplx(0.0d0,0.0d0)    
-    P_lesser_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)
-    P_greater_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)    
-    P_retarded_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)  
+!    P_lesser_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)
+!    P_greater_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)    
+!    P_retarded_1i(:,:,:,:) = dcmplx(0.0d0,0.0d0)  
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
     !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i) shared(ndiag,nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx)    
@@ -345,7 +368,7 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
     print *, 'calc W'
     do ie=1,nen
       if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
-      call green_calc_w_full(0,nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie),w_lesser_i1(:,:,:,ie),w_greater_i1(:,:,:,ie),w_retarded_i1(:,:,:,ie))
+      !call green_calc_w_full(0,nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
       !call green_rgf_calc_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie),w_lesser_i1(:,:,:,ie),w_greater_i1(:,:,:,ie),w_retarded_i1(:,:,:,ie))
       !call green_rgf_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
     enddo
@@ -409,9 +432,9 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
   deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
   deallocate(sigma_lesser_new,sigma_greater_new,sigma_r_new)   
   deallocate(P_retarded,P_lesser,P_greater)
-  deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
+  !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
   deallocate(W_retarded,W_lesser,W_greater)
-  deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
+  !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
 end subroutine green_rgf_solve_gw_1d
 
 
@@ -695,6 +718,7 @@ subroutine green_rgf_w(nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,p_lesser_1i,p
   deallocate(Hii,H1i,Hi1)
 end subroutine green_rgf_w
 
+
 subroutine full2block(fullA,A,NB,length,offdiag)
 complex(8),intent(in)::fullA(NB*length,NB*length)
 complex(8),intent(out)::A(NB,NB,length)
@@ -713,30 +737,36 @@ do i=1,length
 enddo
 end subroutine full2block
 
+
 subroutine block2full(A,fullA,NB,length,offdiag)
 complex(8),intent(in)::A(NB,NB,length)
 complex(8),intent(out)::fullA(NB*length,NB*length)
 integer,intent(in)::NB,length
 integer,intent(in),optional::offdiag
 integer::i,l,h
-fullA=0.0d0
 do i=1,length
   l=(i-1)*NB+1
   h=i*NB  
-  if ((present(offdiag)).and.((i+offdiag) <= length)) then ! n-th off-diagonal blocks
-    fullA(l:h,l+nb*offdiag:h+nb*offdiag) = A(:,:,i)
+  if (present(offdiag)) then
+    if ((i+offdiag) <= length) then ! n-th off-diagonal blocks
+      fullA(l:h,l+nb*offdiag:h+nb*offdiag) = transpose(conjg(A(:,:,i)))
+      fullA(l+nb*offdiag:h+nb*offdiag,l:h) = A(:,:,i)
+    endif
   else ! diagonal blocks
     fullA(l:h,l:h)=A(:,:,i)
   endif
 enddo
 end subroutine block2full
 
-subroutine green_calc_w_full(NBC,nm,nx,Vii,V1i,PLii,PGii,PRii,PL1i,PG1i,PR1i,WLii,WGii,WRii,WLi1,WGi1,WRi1)
+
+subroutine green_calc_w_full(NBC,nm,nx,Vii,V1i,PLii,PGii,PRii,WLii,WGii,WRii)
 integer,intent(in)::nm,nx,NBC
-complex(8),intent(in),dimension(nm,nm,nx) :: Vii,V1i,PLii,PGii,PRii
-complex(8),intent(in),dimension(nm,nm,nx) :: PL1i,PG1i,PR1i
-complex(8),intent(inout),dimension(nm,nm,nx) :: WLii,WGii,WRii,WLi1,WGi1,WRi1
-! ---------
+!complex(8),intent(in),dimension(nm*nx,nm*nx) :: V
+complex(8),intent(in),dimension(nm,nm,nx) :: PLii,PGii,PRii
+complex(8),intent(in),dimension(nm,nm,nx) :: Vii, V1i
+!complex(8),intent(in),dimension(nm,nm,nx) :: PL1i,PG1i,PR1i
+complex(8),intent(inout),dimension(nm,nm,nx) :: WLii,WGii,WRii!,WLi1,WGi1,WRi1
+! --------- local
 complex(8),allocatable,dimension(:,:)::B,M,V
 complex(8),allocatable,dimension(:,:)::PL,PR,PG, WL,WR,WG
 integer::i,NT
@@ -750,12 +780,12 @@ allocate(WL(NT,NT))
 allocate(WG(NT,NT))
 allocate(B(NT,NT))
 allocate(M(NT,NT))  
-V=czero
 PR=czero
 PL=czero
 PG=czero
-call block2full(Vii,V,nm,nx)
-call block2full(V1i,V,nm,nx,1)
+V=czero
+call block2full(Vii,V,nm,nx)  
+call block2full(V1i,V,nm,nx,1)  
 call block2full(PRii,PR,nm,nx)  
 call block2full(PLii,PL,nm,nx)  
 call block2full(PGii,PG,nm,nx)  
@@ -776,8 +806,8 @@ call zgemm('n','c',NT,NT,NT,cone,B,NT,WR,NT,czero,WG,NT)
 call full2block(WR,WRii,nm,nx)
 call full2block(WL,WLii,nm,nx)
 call full2block(WG,WGii,nm,nx)
-deallocate(B,M)  
-deallocate(V,PR,PL,PG,WR,WL,WG)
+deallocate(B,M,V)  
+deallocate(PR,PL,PG,WR,WL,WG)
 end subroutine green_calc_w_full
 
 
@@ -1755,26 +1785,28 @@ deallocate(B,work,ipiv,X)
 end subroutine invert_banded
 
 
-subroutine invert(A,nn)        
-    integer :: info,lda,lwork,nn      
-    integer, dimension(:), allocatable :: ipiv
-    complex(8), dimension(nn,nn),intent(inout) :: A
-    complex(8), dimension(:), allocatable :: work
-    allocate(work(nn*nn))
-    allocate(ipiv(nn))
-    call zgetrf(nn,nn,A,nn,ipiv,info)
-    if (info.ne.0) then
-      print*,'SEVERE warning: zgetrf failed, info=',info
-      call abort
-    endif
+subroutine invert(A,nn)  
+  integer :: info,lda,lwork,nn      
+  integer, dimension(:), allocatable :: ipiv
+  complex(8), dimension(nn,nn),intent(inout) :: A
+  complex(8), dimension(:), allocatable :: work
+  allocate(work(nn*nn))
+  allocate(ipiv(nn))
+  call zgetrf(nn,nn,A,nn,ipiv,info)
+  if (info.ne.0) then
+    print*,'SEVERE warning: zgetrf failed, info=',info
+    A=czero
+  else
     call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
     if (info.ne.0) then
       print*,'SEVERE warning: zgetri failed, info=',info
-      call abort
+      A=czero
     endif
-    deallocate(work)
-    deallocate(ipiv)
+  endif
+  deallocate(work)
+  deallocate(ipiv)
 end subroutine invert
+
 
 Function ferm(a)
     Real (8) a,ferm
@@ -1914,6 +1946,7 @@ do ie = 1,nen
           tr = tr+ G(ib+(k-1)*NB,ib+(k-1)*NB,j,ie,ik)            
         end do
       enddo
+      tr=tr/dble(nk)
       write(11,'(4E18.4)') (j-1)*Lx*NS+(k-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     enddo
   end do
@@ -1947,11 +1980,11 @@ integer:: ie,j,ib,ik
 real(8):: sumtr(nen)
 sumtr=0.0d0
 do ik=1,nk
-  open(unit=11,file=trim(dataset)//'kz'//TRIM(STRING(ik))//'_'//TRIM(STRING(i))//'.dat',status='unknown')
-  do ie = 1,nen    
-    write(11,'(2E18.4)') en(ie), dble(tr(ie,ik))      
-  end do
-  close(11)
+  !open(unit=11,file=trim(dataset)//'kz'//TRIM(STRING(ik))//'_'//TRIM(STRING(i))//'.dat',status='unknown')
+  !do ie = 1,nen    
+  !  write(11,'(2E18.4)') en(ie), dble(tr(ie,ik))      
+  !end do
+  !close(11)
   sumtr=sumtr+tr(:,ik)
 enddo
 sumtr=sumtr/dble(nk)
