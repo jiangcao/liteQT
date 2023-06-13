@@ -10,6 +10,7 @@ private
 
 public :: green_rgf_cms, green_rgf_solve_gw_1d, green_rgf_calc_w
 public :: green_rgf_solve_gw_3d
+public :: green_rgf_solve_gw_ephoton_3d
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -22,6 +23,324 @@ REAL(8), PARAMETER :: pi = 3.14159265359d0
 REAL(8), PARAMETER :: tpi = 3.14159265359d0*2.0d0
 
 CONTAINS
+
+
+! calculate e-photon self-energies in the monochromatic assumption
+subroutine calc_sigma_ephoton_monochromatic(nm,length,nen,En,nop,Mii,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,pre_fact,intensity,hw)
+integer,intent(in)::nm,length,nen,nop
+real(8),intent(in)::en(nen),pre_fact,intensity,hw
+complex(8),intent(in),dimension(nm,nm,length)::Mii ! e-photon interaction matrix blocks
+complex(8),intent(in),dimension(nm,nm,length,nen)::G_lesser,G_greater
+complex(8),intent(inout),dimension(nm,nm,length,nen)::Sig_retarded,Sig_lesser,Sig_greater
+!---------
+integer::ie,ix
+complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+  Sig_lesser=czero
+  Sig_greater=czero
+  Sig_retarded=czero
+  ! Sig^<>(E) = M [ N G^<>(E -+ hw) + (N+1) G^<>(E +- hw)] M
+  !           ~ M [ G^<>(E -+ hw) + G^<>(E +- hw)] M * N
+  !$omp parallel default(none) private(ie,A,B,ix) shared(length,nop,nen,nm,G_lesser,G_greater,Sig_lesser,Sig_greater,Mii)
+  allocate(B(nm,nm))
+  allocate(A(nm,nm))  
+  !$omp do
+  do ie=1,nen
+    do ix=1,length
+      ! Sig^<(E)
+      A = czero
+      if (ie-nop>=1) A =A+ G_lesser(:,:,ix,ie-nop)
+      if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie+nop)
+      call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
+      call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
+      Sig_lesser(:,:,ix,ie) = A 
+      ! Sig^>(E)
+      A = czero
+      if (ie-nop>=1) A =A+ G_greater(:,:,ix,ie-nop)
+      if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie+nop)
+      call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
+      call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
+      Sig_greater(:,:,ix,ie) = A
+    enddo
+  enddo  
+  !$omp end do
+  deallocate(A,B)
+  !$omp end parallel
+  Sig_greater=Sig_greater*pre_fact*intensity/hw**2
+  Sig_lesser=Sig_lesser*pre_fact*intensity/hw**2
+  Sig_retarded = dcmplx(0.0d0*dble(Sig_retarded),aimag(Sig_greater-Sig_lesser)/2.0d0)
+end subroutine calc_sigma_ephoton_monochromatic
+
+subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs)
+  integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
+  real(8),intent(in)::en(nen),temp(2),mu(2),Lx,alpha_mix,spindeg
+  complex(8),intent(in),dimension(nm,nm,nx,nky*nkz)::Hii,H1i,Vii,V1i
+  !complex(8), intent(in):: V(nm*nx,nm*nx,nky*nkz)
+  real(8), intent(in) :: polarization(3) ! light polarization vector 
+  real(8), intent(in) :: intensity ! [W/m^2]
+  logical, intent(in) :: labs ! whether to calculate Pi and absorption
+  complex(8), intent(in):: Pii(nm,nm,3,nx,nky*nkz),P1i(nm,nm,3,nx,nky*nkz) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
+  real(8), intent(in) :: hw ! hw is photon energy in eV
+  ! -------- local variables
+  real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
+  complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser,cur, g_r_i1
+  complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
+  complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
+  complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser,P_greater,P_retarded
+  !complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
+  complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser,W_greater,W_retarded
+  !complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
+  complex(8),allocatable,dimension(:,:,:)::Sii
+  complex(8),allocatable,dimension(:,:,:,:)::Mii,M1i
+  real(8)::tr(nen,nky*nkz),tre(nen,nky*nkz)
+  integer::ie,iter,i,ix,nopmax,nop,nopphot,iop,l,h,io
+  integer::ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,nk
+  complex(8)::dE, B(nm,nm)
+  !
+  print *,'======== green_rgf_solve_gw_ephoton_3D ========'
+  nk=nky*nkz
+  allocate(g_r(nm,nm,nx,nen,nk))
+  allocate(g_r_i1(nm,nm,nx,nen,nk))
+  allocate(g_greater(nm,nm,nx,nen,nk))
+  allocate(g_lesser(nm,nm,nx,nen,nk))
+  allocate(cur(nm,nm,nx,nen,nk))
+  allocate(sigma_lesser_gw(nm,nm,nx,nen,nk))
+  allocate(sigma_greater_gw(nm,nm,nx,nen,nk))
+  allocate(sigma_r_gw(nm,nm,nx,nen,nk))
+  allocate(sigma_lesser_new(nm,nm,nx,nen,nk))
+  allocate(sigma_greater_new(nm,nm,nx,nen,nk))
+  allocate(sigma_r_new(nm,nm,nx,nen,nk))
+  allocate(P_lesser(nm,nm,nx,nen,nk))
+  allocate(P_greater(nm,nm,nx,nen,nk))
+  allocate(P_retarded(nm,nm,nx,nen,nk))
+!  allocate(P_lesser_1i(nm,nm,nx,nen,nk))
+!  allocate(P_greater_1i(nm,nm,nx,nen,nk))
+!  allocate(P_retarded_1i(nm,nm,nx,nen,nk))
+  allocate(W_lesser(nm,nm,nx,nen,nk))
+  allocate(W_greater(nm,nm,nx,nen,nk))
+  allocate(W_retarded(nm,nm,nx,nen,nk))
+!  allocate(W_lesser_i1(nm,nm,nx,nen,nk))
+!  allocate(W_greater_i1(nm,nm,nx,nen,nk))
+!  allocate(W_retarded_i1(nm,nm,nx,nen,nk))  
+  allocate(Mii(nm,nm,nx,nk))
+  Mii(:,:,:,:)=czero
+  do i=1,3
+    Mii(:,:,:,:)=Mii(:,:,:,:)+ polarization(i) * Pii(:,:,i,:,:) 
+  enddo   
+  print '(a8,f15.4,a8,e15.4)','hw=',hw,'I=',intensity  
+  nopphot=floor(hw / (En(2)-En(1)))
+  print *,'nop photon=',nopphot
+  do iter=0,niter
+    print *,'+ iter=',iter
+    !
+    print *, 'calc G'      
+    do ik=1,nk
+      print *, ' ik=', ik,'/',nk
+      !$omp parallel default(none) private(ie) shared(ik,nen,temp,nm,nx,en,mu,Hii,H1i,sigma_lesser_gw,sigma_greater_gw,sigma_r_gw,g_lesser,g_greater,g_r,tre,tr,cur,g_r_i1)    
+      !$omp do 
+      do ie=1,nen     
+        !if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
+        call green_RGF_RS(TEMP,nm,nx,En(ie),mu,Hii(:,:,:,ik),H1i(:,:,:,ik),sigma_lesser_gw(:,:,:,ie,ik),sigma_greater_gw(:,:,:,ie,ik),&
+                        & sigma_r_gw(:,:,:,ie,ik),g_lesser(:,:,:,ie,ik),g_greater(:,:,:,ie,ik),g_r(:,:,:,ie,ik),tr(ie,ik),&
+                        & tre(ie,ik),cur(:,:,:,ie,ik),g_r_i1(:,:,:,ie,ik)) 
+      enddo
+      !$omp end do 
+      !$omp end parallel
+    enddo
+    !
+    call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
+    call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
+    call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
+    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
+    call write_transmission_spectrum_k('gw_trL',iter,tr*spindeg,nen,En,nk)
+    call write_transmission_spectrum_k('gw_trR',iter,tre*spindeg,nen,En,nk)
+    open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
+    write(101,'(I4,2E16.6)') iter, sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
+    close(101)
+    g_r = dcmplx( 0.0d0*dble(g_r), aimag(g_r))
+    g_lesser = dcmplx( 0.0d0*dble(g_lesser), aimag(g_lesser))
+    g_greater = dcmplx( 0.0d0*dble(g_greater), aimag(g_greater))
+    !        
+    print *, 'calc P'    
+    nopmax=nen/2-10      
+    P_lesser = dcmplx(0.0d0,0.0d0)
+    P_greater = dcmplx(0.0d0,0.0d0)    
+    P_retarded = dcmplx(0.0d0,0.0d0)    
+!    P_lesser_1i = dcmplx(0.0d0,0.0d0)
+!    P_greater_1i = dcmplx(0.0d0,0.0d0)    
+!    P_retarded_1i = dcmplx(0.0d0,0.0d0)  
+    ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
+    ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
+    !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,P_lesser,P_greater,P_retarded,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky,nk)    
+    !$omp do         
+    do nop=-nopmax,nopmax
+      iop=nop+nen/2  
+      do iqy=1,nky        
+        do iqz=1,nkz
+          iq=iqz + (iqy-1)*nkz
+          do ix=1,nx
+            do i=1,nm      
+              l=max(i-ndiag,1)
+              h=min(nm,i+ndiag)   
+              do iky=1,nky
+                do ikz=1,nkz              
+                  ik=ikz + (iky-1)*nkz
+                  ikzd=ikz-iqz + nkz/2
+                  ikyd=iky-iqy + nky/2
+                  if (ikzd<1)   ikzd=ikzd+nkz
+                  if (ikzd>nkz) ikzd=ikzd-nkz
+                  if (ikyd<1)   ikyd=ikyd+nky
+                  if (ikyd>nky) ikyd=ikyd-nky                
+                  if (nky==1)   ikyd=1
+                  if (nkz==1)   ikzd=1
+                  ikd=ikzd + (ikyd-1)*nkz
+                  do ie = max(nop+1,1),min(nen,nen+nop)           
+                    P_lesser(i,l:h,ix,iop,iq) = P_lesser(i,l:h,ix,iop,iq) + G_lesser(i,l:h,ix,ie,ik) * G_greater(l:h,i,ix,ie-nop,ikd)
+                    P_greater(i,l:h,ix,iop,iq) = P_greater(i,l:h,ix,iop,iq) + G_greater(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd)        
+                    P_retarded(i,l:h,ix,iop,iq) = P_retarded(i,l:h,ix,iop,iq) + (G_lesser(i,l:h,ix,ie,ik) * conjg(G_r(i,l:h,ix,ie-nop,ikd)) & 
+                                              & + G_r(i,l:h,ix,ie,ik) * G_lesser(l:h,i,ix,ie-nop,ikd))        
+                  enddo
+                enddo
+              enddo
+            enddo
+          enddo
+        enddo
+      enddo      
+    enddo          
+    !$omp end do 
+    !$omp end parallel
+    dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg /dble(nk)
+    P_lesser=P_lesser*dE
+    P_greater=P_greater*dE
+    P_retarded=P_retarded*dE
+    call write_spectrum_summed_over_k('gw_PR',iter,P_retarded,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_PL',iter,P_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_PG',iter,P_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !
+    print *, 'calc W'                
+    do iq=1,nky*nkz
+      print *, ' iq=', iq,'/',nk
+      !$omp parallel default(none) private(nop) shared(iq,nopmax,nen,nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,w_lesser,w_greater,w_retarded)    
+      !$omp do 
+      do nop=-nopmax+nen/2,nopmax+nen/2 
+        call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+      enddo
+      !$omp end do 
+      !$omp end parallel
+    enddo
+    call write_spectrum_summed_over_k('gw_WR',iter,W_retarded,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_WG',iter,W_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !
+    print *, 'calc SigGW'
+    nopmax=nen/2-10
+    Sigma_greater_new = dcmplx(0.0d0,0.0d0)
+    Sigma_lesser_new = dcmplx(0.0d0,0.0d0)
+    Sigma_r_new = dcmplx(0.0d0,0.0d0)    
+    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
+    !$omp parallel default(none) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,w_lesser,w_greater,w_retarded,sigma_lesser_new,sigma_greater_new,sigma_r_new,nen,En,nm,G_lesser,G_greater,G_r,nx,nkz,nky,nk)    
+    !$omp do    
+    do ie=1,nen      
+      do iky=1,nky
+        do ikz=1,nkz
+          do nop= -nopmax,nopmax    
+            if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then   
+              ik=ikz+(iky-1)*nkz
+              do iqy=1,nky
+                do iqz=1,nkz              
+                  iq=iqz + (iqy-1)*nkz
+                  iop=nop+nen/2                
+                  ikzd=ikz-iqz + nkz/2
+                  ikyd=iky-iqy + nky/2            
+                  if (ikzd<1)   ikzd=ikzd+nkz
+                  if (ikzd>nkz) ikzd=ikzd-nkz
+                  if (ikyd<1)   ikyd=ikyd+nky
+                  if (ikyd>nky) ikyd=ikyd-nky        
+                  if (nky==1)   ikyd=1
+                  if (nkz==1)   ikzd=1        
+                  ikd=ikzd + (ikyd-1)*nkz
+                  do ix=1,nx
+                    do i=1,nm
+                      l=max(i-ndiag,1)
+                      h=min(nm,i+ndiag)                                                
+                      Sigma_lesser_new(i,l:h,ix,ie,ik)=Sigma_lesser_new(i,l:h,ix,ie,ik)+G_lesser(i,l:h,ix,ie-nop,ikd)*W_lesser(i,l:h,ix,iop,iq)
+                      Sigma_greater_new(i,l:h,ix,ie,ik)=Sigma_greater_new(i,l:h,ix,ie,ik)+G_greater(i,l:h,ix,ie-nop,ikd)*W_greater(i,l:h,ix,iop,iq)
+                      Sigma_r_new(i,l:h,ix,ie,ik)=Sigma_r_new(i,l:h,ix,ie,ik)+G_lesser(i,l:h,ix,ie-nop,ikd)*W_retarded(i,l:h,ix,iop,iq) &
+                                                          &  +G_r(i,l:h,ix,ie-nop,ikd)*W_lesser(i,l:h,ix,iop,iq) &
+                                                          &  +G_r(i,l:h,ix,ie-nop,ikd)*W_retarded(i,l:h,ix,iop,iq)    
+                     enddo
+                  enddo
+                enddo
+              enddo
+            endif            
+          enddo
+        enddo
+      enddo      
+    enddo
+    !$omp end do
+    !$omp end parallel
+    dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi) /dble(nk) 
+    Sigma_lesser_new = Sigma_lesser_new  * dE
+    Sigma_greater_new= Sigma_greater_new * dE
+    Sigma_r_new=Sigma_r_new* dE
+    Sigma_r_new = dcmplx( dble(Sigma_r_new), aimag(Sigma_greater_new-Sigma_lesser_new)/2.0d0 )    
+    ! symmetrize the selfenergies
+    do ie=1,nen
+      do ik=1,nk
+        do ix=1,nx
+          B(:,:)=transpose(Sigma_r_new(:,:,ix,ie,ik))
+          Sigma_r_new(:,:,ix,ie,ik) = (Sigma_r_new(:,:,ix,ie,ik) + B(:,:))/2.0d0    
+          B(:,:)=transpose(Sigma_lesser_new(:,:,ix,ie,ik))
+          Sigma_lesser_new(:,:,ix,ie,ik) = (Sigma_lesser_new(:,:,ix,ie,ik) + B(:,:))/2.0d0
+          B(:,:)=transpose(Sigma_greater_new(:,:,ix,ie,ik))
+          Sigma_greater_new(:,:,ix,ie,ik) = (Sigma_greater_new(:,:,ix,ie,ik) + B(:,:))/2.0d0
+        enddo
+      enddo
+    enddo
+    ! mixing with the previous one
+    Sigma_r_gw= Sigma_r_gw+ alpha_mix * (Sigma_r_new -Sigma_r_gw)
+    Sigma_lesser_gw  = Sigma_lesser_gw+ alpha_mix * (Sigma_lesser_new -Sigma_lesser_gw)
+    Sigma_greater_gw = Sigma_greater_gw+ alpha_mix * (Sigma_greater_new -Sigma_greater_gw)  
+    ! 
+    call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !
+    if (iter>=(niter-5)) then
+      print *, 'calc SigEPhoton'
+      do ik=1,nk
+        print *, ' ik=', ik,'/',nk
+        call calc_sigma_ephoton_monochromatic(nm,nx,nen,En,nopphot,Mii(:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),Sigma_r_new(:,:,:,:,ik),Sigma_lesser_new(:,:,:,:,ik),Sigma_greater_new(:,:,:,:,ik),pre_fact,intensity,hw)
+      enddo
+      Sigma_r_gw       = Sigma_r_gw + Sigma_r_new 
+      Sigma_lesser_gw  = Sigma_lesser_gw + Sigma_lesser_new 
+      Sigma_greater_gw = Sigma_greater_gw + Sigma_greater_new  
+      call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    endif
+    ! make sure self-energy is continuous near leads (by copying edge block)
+    do ix=1,2
+      Sigma_r_gw(:,:,ix,:,:)=Sigma_r_gw(:,:,3,:,:)
+      Sigma_lesser_gw(:,:,ix,:,:)=Sigma_lesser_gw(:,:,3,:,:)
+      Sigma_greater_gw(:,:,ix,:,:)=Sigma_greater_gw(:,:,3,:,:)
+    enddo
+    do ix=1,2
+      Sigma_r_gw(:,:,nx-ix+1,:,:)=Sigma_r_gw(:,:,nx-2,:,:)
+      Sigma_lesser_gw(:,:,nx-ix+1,:,:)=Sigma_lesser_gw(:,:,nx-2,:,:)
+      Sigma_greater_gw(:,:,nx-ix+1,:,:)=Sigma_greater_gw(:,:,nx-2,:,:)
+    enddo    
+  enddo
+  deallocate(g_r,g_lesser,g_greater,cur)
+  deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
+  deallocate(sigma_lesser_new,sigma_greater_new,sigma_r_new)   
+  deallocate(P_retarded,P_lesser,P_greater)
+  !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
+  deallocate(W_retarded,W_lesser,W_greater)
+  !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
+  deallocate(Mii)
+end subroutine green_rgf_solve_gw_ephoton_3d
+
+
 
 subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg)
   integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
@@ -816,14 +1135,15 @@ end subroutine green_calc_w_full
 ! W^<> = W^r P<> W^a
 ! compare to usual RGF: 
 !     V.Pr as Ham, and V.P<>.V' as Sig<>
-!     Wr = Gr.V  
-!     W<> = G<>
-subroutine green_rgf_calc_w(nm,nx,Vii,V1i,PL,PG,PR,PL1i,PG1i,PR1i,WL,WG,WR,WLi1,WGi1,WRi1)
+!     Wr  ~ Gr.V  
+!     W<> ~ G<>
+subroutine green_rgf_calc_w(NBC,nm,nx,Vii,V1i,PL,PG,PR,PL1i,PG1i,PR1i,WL,WG,WR,WLi1,WGi1,WRi1)
 integer,intent(in)::nm,nx
 complex(8),intent(in),dimension(nm,nm,nx) :: Vii,V1i,PL,PG,PR
 complex(8),intent(in),dimension(nm,nm,nx) :: PL1i,PG1i,PR1i
 complex(8),intent(inout),dimension(nm,nm,nx) :: WL,WG,WR,WLi1,WGi1,WRi1
-! --------
+integer,intent(in) :: NBC
+! -------- local
 COMPLEX(8)::A(nm,nm),B(nm,nm),C(nm,nm),D(nm,nm),Wn(nm,nm),Wp(nm,nm),sig(nm,nm),AL(nm,nm),BL(nm,nm)
 COMPLEX(8)::S00(nm,nm),H00(nm,nm),H10(nm,nm),H01(nm,nm),GN0(nm,nm),G0N(nm,nm),G00(nm,nm)
 complex(8),allocatable,dimension(:,:,:)::S,M,LL,LG,VV,M1i,Mi1,S1i,Si1
@@ -834,7 +1154,7 @@ complex(8),dimension(:,:),allocatable::VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,&
     MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N
 complex(8),dimension(:,:),allocatable::dM11,xR11,dLL11,dLG11,dV11
 complex(8),dimension(:,:),allocatable::dMnn,xRnn,dLLnn,dLGnn,dVnn
-integer::i,NL,NR,LBsize,RBsize,NBC
+integer::i,NL,NR,LBsize,RBsize
 integer::ix,l
 real(8)::condL,condR
 
@@ -842,230 +1162,231 @@ S00=czero ! overlap matrix
 do i=1,nm
     S00(i,i)=1.0d0
 enddo
-
-NBC=1
-NL=nm ! left contact block size
-NR=nm ! right contact block size
-LBsize=NL*NBC
-RBsize=NR*NBC
-allocate(M(nm,nm,nx))
-allocate(M1i(nm,nm,nx))
-allocate(Mi1(nm,nm,nx))
-allocate(S(nm,nm,nx))
-allocate(S1i(nm,nm,nx))
-allocate(Si1(nm,nm,nx))
-allocate(LL(nm,nm,nx))
-allocate(LG(nm,nm,nx))
-LL=czero
-LG=czero
-allocate(V00 (LBsize,LBsize))
-allocate(V01 (LBsize,LBsize))
-allocate(V10 (LBsize,LBsize))
-allocate(M00 (LBsize,LBsize))
-allocate(M01 (LBsize,LBsize))
-allocate(M10 (LBsize,LBsize))
-allocate(PR00(LBsize,LBsize))
-allocate(PR01(LBsize,LBsize))
-allocate(PR10(LBsize,LBsize))
-allocate(PG00(LBsize,LBsize))
-allocate(PG01(LBsize,LBsize))
-allocate(PG10(LBsize,LBsize))
-allocate(PL00(LBsize,LBsize))
-allocate(PL01(LBsize,LBsize))
-allocate(PL10(LBsize,LBsize))
-allocate(LG00(LBsize,LBsize))
-allocate(LG01(LBsize,LBsize))
-allocate(LG10(LBsize,LBsize))
-allocate(LL00(LBsize,LBsize))
-allocate(LL01(LBsize,LBsize))
-allocate(LL10(LBsize,LBsize))
-allocate(dM11(LBsize,LBsize))
-allocate(xR11(LBsize,LBsize))
-allocate(dV11(LBsize,LBsize))
-allocate(dLL11(LBsize,LBsize))
-allocate(dLG11(LBsize,LBsize))
-!
-allocate(VNN  (RBsize,RBsize))
-allocate(VNN1 (RBsize,RBsize))
-allocate(Vn1n (RBsize,RBsize))
-allocate(Mnn  (RBsize,RBsize))
-allocate(Mnn1 (RBsize,RBsize))
-allocate(Mn1n (RBsize,RBsize))
-allocate(PRnn (RBsize,RBsize))
-allocate(PRnn1(RBsize,RBsize))
-allocate(PRn1n(RBsize,RBsize))
-allocate(PGnn (RBsize,RBsize))
-allocate(PGnn1(RBsize,RBsize))
-allocate(PGn1n(RBsize,RBsize))
-allocate(PLnn (RBsize,RBsize))
-allocate(PLnn1(RBsize,RBsize))
-allocate(PLn1n(RBsize,RBsize))
-allocate(LGnn (RBsize,RBsize))
-allocate(LGnn1(RBsize,RBsize))
-allocate(LGn1n(RBsize,RBsize))
-allocate(LLnn (RBsize,RBsize))
-allocate(LLnn1(RBsize,RBsize))
-allocate(LLn1n(RBsize,RBsize))
-allocate(dMnn (RBsize,RBsize))
-allocate(xRnn (RBsize,RBsize))
-allocate(dLLnn(RBsize,RBsize))
-allocate(dLGnn(RBsize,RBsize))
-allocate(dVnn(RBsize,RBsize))
-! left
-call get_OBC_blocks_for_W(NL,Vii(:,:,1),V1i(:,:,1),PR(:,:,1),PR1i(:,:,1),&
-    PL(:,:,1),PL1i(:,:,1),PG(:,:,1),PG(:,:,1),NBC,&
-    V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
-    LL00,LL01,LL10,LG00,LG01,LG10)
-! right   
-call get_OBC_blocks_for_W(NR,Vii(:,:,nx),transpose(conjg(V1i(:,:,nx))),PR(:,:,nx),&
-    transpose(PR1i(:,:,nx)),PL(:,:,nx),-transpose(conjg(PL1i(:,:,nx))),&
-    PG(:,:,nx),-transpose(conjg(PG1i(:,:,nx))),NBC,&
-    VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
-    LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
-!
-!! S = V P^r
-! Si,i = Vi,i Pi,i + Vi,i+1 Pi+1,i + Vi,i-1 Pi-1,i
-do ix=1,nx
-  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,ix),nm,PR(:,:,ix),nm,czero,S(:,:,ix),nm)
-  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
-  if (ix==1) then
-    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
-  else
-    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix-1),nm,PR1i(:,:,ix-1),nm,cone,S(:,:,ix),nm) 
-  endif
-
-enddo
-!! Correct first and last block to account for elements in the contacts
-S(:,:,1)=S(:,:,1) + matmul(V10,PR01)
-S(:,:,nx)=S(:,:,nx) + matmul(VNN1,PRN1N)
-!
-do i=1,nx
-  ! Si+1,i = Vi+1,i+1 Pi+1,i + Vi+1,i Pi,i
-  if (i==nx) then
-    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PR1i(:,:,i),nm,cone,S1i(:,:,i),nm) 
-  else    
-    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i+1),nm,PR1i(:,:,i),nm,cone,S1i(:,:,i),nm) 
-  endif
-  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i),nm,cone,S1i(:,:,i),nm) 
-  ! Si,i+1 = Vi,i Pi,i+1 + Vi,i+1 Pi+1,i+1
-  call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PR1i(:,:,i),nm,cone,Si1(:,:,i),nm)
-  if (i==nx) then 
-    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i),nm,cone,Si1(:,:,i),nm) 
-  else
-    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i+1),nm,cone,Si1(:,:,i),nm) 
-  endif
-enddo
-M = -S
-M1i=-S1i
-Mi1=-Si1
-do ix=1,nx
-  do i=1,nm
-     M(i,i,ix) = dcmplx(1.0d0, 1.0d-3) + M(i,i,ix) 
-  enddo
-enddo
-deallocate(S,S1i,Si1)
-!! LL=V P^l V'
-!! LLi,i
-do i=1,nx
-  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
+if (NBC>0) then ! BC correction
+  NL=nm ! left contact block size
+  NR=nm ! right contact block size
+  LBsize=NL*NBC
+  RBsize=NR*NBC
+  allocate(M(nm,nm,nx))
+  allocate(M1i(nm,nm,nx))
+  allocate(Mi1(nm,nm,nx))
+  allocate(S(nm,nm,nx))
+  allocate(S1i(nm,nm,nx))
+  allocate(Si1(nm,nm,nx))
+  allocate(LL(nm,nm,nx))
+  allocate(LG(nm,nm,nx))
+  LL=czero
+  LG=czero
+  allocate(V00 (LBsize,LBsize))
+  allocate(V01 (LBsize,LBsize))
+  allocate(V10 (LBsize,LBsize))
+  allocate(M00 (LBsize,LBsize))
+  allocate(M01 (LBsize,LBsize))
+  allocate(M10 (LBsize,LBsize))
+  allocate(PR00(LBsize,LBsize))
+  allocate(PR01(LBsize,LBsize))
+  allocate(PR10(LBsize,LBsize))
+  allocate(PG00(LBsize,LBsize))
+  allocate(PG01(LBsize,LBsize))
+  allocate(PG10(LBsize,LBsize))
+  allocate(PL00(LBsize,LBsize))
+  allocate(PL01(LBsize,LBsize))
+  allocate(PL10(LBsize,LBsize))
+  allocate(LG00(LBsize,LBsize))
+  allocate(LG01(LBsize,LBsize))
+  allocate(LG10(LBsize,LBsize))
+  allocate(LL00(LBsize,LBsize))
+  allocate(LL01(LBsize,LBsize))
+  allocate(LL10(LBsize,LBsize))
+  allocate(dM11(LBsize,LBsize))
+  allocate(xR11(LBsize,LBsize))
+  allocate(dV11(LBsize,LBsize))
+  allocate(dLL11(LBsize,LBsize))
+  allocate(dLG11(LBsize,LBsize))
   !
-  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL(:,:,min(i+1,nx)),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
+  allocate(VNN  (RBsize,RBsize))
+  allocate(VNN1 (RBsize,RBsize))
+  allocate(Vn1n (RBsize,RBsize))
+  allocate(Mnn  (RBsize,RBsize))
+  allocate(Mnn1 (RBsize,RBsize))
+  allocate(Mn1n (RBsize,RBsize))
+  allocate(PRnn (RBsize,RBsize))
+  allocate(PRnn1(RBsize,RBsize))
+  allocate(PRn1n(RBsize,RBsize))
+  allocate(PGnn (RBsize,RBsize))
+  allocate(PGnn1(RBsize,RBsize))
+  allocate(PGn1n(RBsize,RBsize))
+  allocate(PLnn (RBsize,RBsize))
+  allocate(PLnn1(RBsize,RBsize))
+  allocate(PLn1n(RBsize,RBsize))
+  allocate(LGnn (RBsize,RBsize))
+  allocate(LGnn1(RBsize,RBsize))
+  allocate(LGn1n(RBsize,RBsize))
+  allocate(LLnn (RBsize,RBsize))
+  allocate(LLnn1(RBsize,RBsize))
+  allocate(LLn1n(RBsize,RBsize))
+  allocate(dMnn (RBsize,RBsize))
+  allocate(xRnn (RBsize,RBsize))
+  allocate(dLLnn(RBsize,RBsize))
+  allocate(dLGnn(RBsize,RBsize))
+  allocate(dVnn(RBsize,RBsize))
+  ! left
+  call get_OBC_blocks_for_W(NL,Vii(:,:,1),V1i(:,:,1),PR(:,:,1),PR1i(:,:,1),&
+      PL(:,:,1),PL1i(:,:,1),PG(:,:,1),PG(:,:,1),NBC,&
+      V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+      LL00,LL01,LL10,LG00,LG01,LG10)
+  ! right   
+  call get_OBC_blocks_for_W(NR,Vii(:,:,nx),transpose(conjg(V1i(:,:,nx))),PR(:,:,nx),&
+      transpose(PR1i(:,:,nx)),PL(:,:,nx),-transpose(conjg(PL1i(:,:,nx))),&
+      PG(:,:,nx),-transpose(conjg(PG1i(:,:,nx))),NBC,&
+      VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
+      LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
   !
-  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
-  !
-  call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
-  !
-  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LL(:,:,i),nm)
-  !
-  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PL(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LL(:,:,i),nm)
-  !
-  call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
-enddo
-!!Correct first and last block to account for elements in the contacts
-LL(:,:,1)=LL(:,:,1) + matmul(matmul(V10,PL00),V01) + &
-  matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
-LL(:,:,nx)=LL(:,:,nx) + &
-  matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
-  matmul(matmul(VNN1,PLNN),VN1N)
-!
-!! LG=V P^g V'    
-!! LGi,i
-do i=1,nx
-  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG(:,:,min(i+1,nx)),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PG(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LG(:,:,i),nm)
-  !
-  call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
-  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
-enddo
-!!Correct first and last block to account for elements in the contacts
-LG(:,:,1)=LG(:,:,1) + matmul(matmul(V10,PG00),V01) + &
-  matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
-LG(:,:,nx)=LG(:,:,nx) + &
-  matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
+  !! S = V P^r
+  ! Si,i = Vi,i Pi,i + Vi,i+1 Pi+1,i + Vi,i-1 Pi-1,i
+  do ix=1,nx
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,ix),nm,PR(:,:,ix),nm,czero,S(:,:,ix),nm)
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
+    if (ix==1) then
+      call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
+    else
+      call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix-1),nm,PR1i(:,:,ix-1),nm,cone,S(:,:,ix),nm) 
+    endif
   
-! WR/WL/WG OBC Left
-call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
-!! WR/WL/WG OBC right
-call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
-allocate(VV(nm,nm,nx))
-VV = Vii
-if (condL<1.0d-6) then   
+  enddo
+  !! Correct first and last block to account for elements in the contacts
+  S(:,:,1)=S(:,:,1) + matmul(V10,PR01)
+  S(:,:,nx)=S(:,:,nx) + matmul(VNN1,PRN1N)
+  !
+  do i=1,nx
+    ! Si+1,i = Vi+1,i+1 Pi+1,i + Vi+1,i Pi,i
+    if (i==nx) then
+      call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PR1i(:,:,i),nm,cone,S1i(:,:,i),nm) 
+    else    
+      call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i+1),nm,PR1i(:,:,i),nm,cone,S1i(:,:,i),nm) 
+    endif
+    call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i),nm,cone,S1i(:,:,i),nm) 
+    ! Si,i+1 = Vi,i Pi,i+1 + Vi,i+1 Pi+1,i+1
+    call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PR1i(:,:,i),nm,cone,Si1(:,:,i),nm)
+    if (i==nx) then 
+      call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i),nm,cone,Si1(:,:,i),nm) 
+    else
+      call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i+1),nm,cone,Si1(:,:,i),nm) 
+    endif
+  enddo
+  M = -S
+  M1i=-S1i
+  Mi1=-Si1
+  do ix=1,nx
+    do i=1,nm
+       M(i,i,ix) = dcmplx(1.0d0, 1.0d-3) + M(i,i,ix) 
+    enddo
+  enddo
+  deallocate(S,S1i,Si1)
+  !! LL=V P^l V'
+  !! LLi,i
+  do i=1,nx
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
     !
-    call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
-   !
-    M(:,:,1)=M(:,:,1) - dM11
-    VV(:,:,1)=VV(:,:,1) - dV11    
-    LL(:,:,1)=LL(:,:,1) + dLL11
-    LG(:,:,1)=LG(:,:,1) + dLG11    
-endif
-if (condR<1.0d-6) then    
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL(:,:,min(i+1,nx)),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
     !
-    call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
     !
-    M(:,:,nx)=M(:,:,nx) - dMNN
-    VV(:,:,nx)=VV(:,:,nx)- dVNN
-    LL(:,:,nx)=LL(:,:,nx) + dLLNN
-    LG(:,:,nx)=LG(:,:,nx) + dLGNN    
-endif
+    call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
+    !
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LL(:,:,i),nm)
+    !
+    call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PL(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LL(:,:,i),nm)
+    !
+    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
+  enddo
+  !!Correct first and last block to account for elements in the contacts
+  LL(:,:,1)=LL(:,:,1) + matmul(matmul(V10,PL00),V01) + &
+    matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
+  LL(:,:,nx)=LL(:,:,nx) + &
+    matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
+    matmul(matmul(VNN1,PLNN),VN1N)
+  !
+  !! LG=V P^g V'    
+  !! LGi,i
+  do i=1,nx
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG(:,:,min(i+1,nx)),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PG(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LG(:,:,i),nm)
+    !
+    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
+  enddo
+  !!Correct first and last block to account for elements in the contacts
+  LG(:,:,1)=LG(:,:,1) + matmul(matmul(V10,PG00),V01) + &
+    matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
+  LG(:,:,nx)=LG(:,:,nx) + &
+    matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
+    
+  ! WR/WL/WG OBC Left
+  call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
+  !! WR/WL/WG OBC right
+  call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
+  allocate(VV(nm,nm,nx))
+  VV = Vii
+  if (condL<1.0d-6) then   
+      !
+      call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
+     !
+      M(:,:,1)=M(:,:,1) - dM11
+      VV(:,:,1)=VV(:,:,1) - dV11    
+      LL(:,:,1)=LL(:,:,1) + dLL11
+      LG(:,:,1)=LG(:,:,1) + dLG11    
+  endif
+  if (condR<1.0d-6) then    
+      !
+      call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
+      !
+      M(:,:,nx)=M(:,:,nx) - dMNN
+      VV(:,:,nx)=VV(:,:,nx)- dVNN
+      LL(:,:,nx)=LL(:,:,nx) + dLLNN
+      LG(:,:,nx)=LG(:,:,nx) + dLGNN    
+  endif
+  
+  deallocate(V00,V01,V10)
+  deallocate(M00,M01,M10)
+  deallocate(PR00,PR01,PR10)
+  deallocate(PG00,PG01,PG10)
+  deallocate(PL00,PL01,PL10)
+  deallocate(LG00,LG01,LG10)
+  deallocate(LL00,LL01,LL10)
+  deallocate(VNN,VNN1,Vn1n)
+  deallocate(Mnn,Mnn1,Mn1n)
+  deallocate(PRnn,PRnn1,PRn1n)
+  deallocate(PGnn,PGnn1,PGn1n)
+  deallocate(PLnn,PLnn1,PLn1n)
+  deallocate(LGnn,LGnn1,LGn1n)
+  deallocate(LLnn,LLnn1,LLn1n)
+  deallocate(dM11,xR11,dLL11,dLG11,dV11)
+  deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
 
-deallocate(V00,V01,V10)
-deallocate(M00,M01,M10)
-deallocate(PR00,PR01,PR10)
-deallocate(PG00,PG01,PG10)
-deallocate(PL00,PL01,PL10)
-deallocate(LG00,LG01,LG10)
-deallocate(LL00,LL01,LL10)
-deallocate(VNN,VNN1,Vn1n)
-deallocate(Mnn,Mnn1,Mn1n)
-deallocate(PRnn,PRnn1,PRn1n)
-deallocate(PGnn,PGnn1,PGn1n)
-deallocate(PLnn,PLnn1,PLn1n)
-deallocate(LGnn,LGnn1,LGn1n)
-deallocate(LLnn,LLnn1,LLn1n)
-deallocate(dM11,xR11,dLL11,dLG11,dV11)
-deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
+endif
 !
 allocate(xlr(nm,nm,nx)) ! left-connected xR
 allocate(wlr(nm,nm,nx)) ! left-connected Wr
@@ -1926,6 +2247,33 @@ end do
 close(11)
 end subroutine write_spectrum
 
+
+
+! write current spectrum into file (pm3d map)
+subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,Lx,nk)
+  character(len=*), intent(in) :: dataset
+  complex(8), intent(in) :: cur(:,:,:,:,:)
+  integer, intent(in)::i,nen,length,NB,nk
+  real(8), intent(in)::Lx,en(nen)
+  integer:: ie,j,ib,jb,ik
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ie = 1,nen
+    do j = 1,length-1
+      tr=0.0d0          
+      do ik=1,nk
+        do ib=1,nb  
+          do jb=1,nb        
+            tr = tr+ cur(ib,jb,j,ie,ik)
+          enddo                        
+        enddo
+      enddo
+      write(11,'(3E18.4)') dble(j-1)*Lx, en(ie), dble(tr)
+    enddo
+    write(11,*)    
+  enddo
+  close(11)
+end subroutine write_current_spectrum_summed_over_kz
 
 
 ! write spectrum into file (pm3d map)

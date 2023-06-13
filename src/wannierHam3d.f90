@@ -30,6 +30,7 @@ public :: NB, Lx, Ly,Lz, Nvb, VBM, CBM, kt_CBM, kt_VBM, Eg, spin_deg
 public :: eig,cross,eigv,b1,b2,norm,wannier_center,alpha,beta, invert
 public :: w90_MAT_DEF_full_device, w90_bare_coulomb_full_device
 public :: w90_bare_coulomb_blocks
+public :: w90_momentum_full_device,w90_momentum_blocks
 
 CONTAINS
 
@@ -446,8 +447,139 @@ end do
 END FUNCTION bare_coulomb
 
 
+!!! construct the diagonal and off-diagonal blocks P(I,I), P(I+1,I)
+SUBROUTINE w90_momentum_blocks(Hii,H1i,kx,ky,kz,NS,method)
+! ky in [2pi/Ang]
+implicit none
+integer, intent(in) :: ns
+COMPLEX(8), INTENT(OUT), DIMENSION(NB*ns,NB*ns,3) :: Hii, H1i ! momentum matrix block [eV]
+real(8), intent(in) :: ky,kx,kz
+character(len=*),intent(in)::method
+integer :: i,j,k,l,v
+real(8), dimension(3) :: kv, r
+complex(8) :: phi
+Hii(:,:,:) = zzero
+H1i(:,:,:) = zzero
+call calc_momentum_operator(method)
+kv = kx*xhat + ky*yhat + kz*zhat
+do v=1,3 ! cart direction
+  do i = 1,ns
+    do k = 1,ns    
+      do j = ymin,ymax
+        do l = zmin,zmax            
+          r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm        
+          phi = dcmplx( 0.0d0, - dot_product(r,kv) ) 
+          if ((i-k <= xmax ) .and. (i-k >= xmin )) then                      
+            Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = Hii(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + &
+                  & pmn(v,:,:,i-k-xmin+1,j-ymin+1,l-zmin+1) * exp( phi )           
+          endif
+          if (((i-k+ns) <= xmax) .and. ((i-k+ns) >= xmin)) then                                          
+            H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = H1i(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + & 
+                  & pmn(v,:,:,i-k-xmin+1+NS,j-ymin+1,l-zmin+1) * exp( phi )                        
+          endif
+        enddo
+      enddo        
+    enddo
+  enddo  
+enddo
+END SUBROUTINE w90_momentum_blocks
 
 
+SUBROUTINE w90_momentum_full_device(Ham,ky,kz,length,NS,method)
+implicit none
+integer, intent(in) :: length
+integer, intent(in), optional :: NS
+real(8), intent(in) :: ky,kz
+complex(8), intent(inout), dimension(NB*length,NB*length,3) :: Ham ! momentum matrix [eV]
+character(len=*),intent(in)::method
+integer :: i,j, k,v,l
+real(8), dimension(3) :: kv, r
+complex(8) :: phi
+Ham = dcmplx(0.0d0,0.0d0)
+call calc_momentum_operator(method)
+do v=1,3 ! cart direction
+  do i = 1, length
+    do k = 1, length
+      do j = ymin,ymax
+        do l = zmin,zmax
+          kv = ky*yhat + kz*zhat
+          r =  dble(i-k)*alpha + dble(j)*beta + dble(l)*gamm                   
+          phi = dcmplx( 0.0d0, - dot_product(r,kv) )
+          if (present(NS)) then
+              if ((i-k <= min(NS,xmax) ) .and. (i-k >= max(-NS,xmin) )) then                
+                  Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + &
+                  & pmn(v,:,:,i-k-xmin+1,j-ymin+1,l-zmin+1) * exp( phi )           
+              end if                 
+          else
+              if ((i-k <= xmax ) .and. (i-k >= xmin )) then                
+                  Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) = Ham(((i-1)*nb+1):i*nb,((k-1)*nb+1):k*nb,v) + &
+                  & pmn(v,:,:,i-k-xmin+1,j-ymin+1,l-zmin+1) * exp( phi )           
+              end if                 
+          end if
+        enddo
+      end do
+    end do
+  end do
+enddo
+END SUBROUTINE w90_momentum_full_device
+!
+SUBROUTINE calc_momentum_operator(method)
+implicit none
+character(len=*),intent(in)::method
+integer::io,jo,ix,iy,iz,mx,my,mz,mo
+real(8)::r(3)
+complex(8)::pre_fact
+if (.not.(allocated(pmn))) allocate(pmn(3,NB,NB,nx,ny,nz)) ! [eV]
+pre_fact=1.0d-8 * dcmplx(0.0d0,1.0d0) *m0/hbar*1.0d2 * c0  ! multiply light-speed so c0*pmn in energy eV 
+select case (method)
+  case ('approx')
+  ! use wannier centers, point-like orbitals
+    pmn = 0.0d0
+    do io=1,NB
+      do jo=1,NB
+        do ix=xmin,xmax
+          do iy=ymin,ymax
+            do iz=zmin,zmax
+              r = dble(ix)*alpha + dble(iy)*beta + dble(iz)*gamm + wannier_center(:,io) - wannier_center(:,jo)
+              pmn(:,io,jo,ix-xmin+1,iy-ymin+1,iz-zmin+1)=Hr(io,jo,ix-xmin+1,iy-ymin+1,iz-zmin+1)*r
+            enddo
+          enddo
+        enddo
+      enddo
+    enddo
+    pmn=pmn*pre_fact
+  case ('exact')
+  ! use position operator : im_0/hbar sum_{R'l} H_{nl}(R-R') r_{lm}(R') - r_{nl}(R-R') H_{lm}(R')
+    pmn = 0.0d0
+    do io=1,NB
+      do jo=1,NB
+        do ix=xmin,xmax
+          do iy=ymin,ymax
+            do iz=zmin,zmax
+              do mo=1,NB
+                do mx=xmin,xmax
+                  do my=ymin,ymax
+                    do mz=zmin,zmax
+                      if (((ix-mx)>=xmin).and.((ix-mx)<=xmax).and.((iy-my)>=ymin).and.((iy-my)<=ymax).and.((iz-mz)>=zmin).and.((iz-mz)<=zmax)) then
+                        pmn(:,io,jo,ix-xmin+1,iy-ymin+1,iz-zmin+1)=pmn(:,io,jo,ix-xmin+1,iy-ymin+1,iz-zmin+1)&
+                        &+Hr(io,mo,ix-mx-xmin+1,iy-my-ymin+1,iz-zmin+1)*rmn(:,mo,jo,mx-xmin+1,my-ymin+1,mz-zmin+1)&
+                        &-rmn(:,io,mo,ix-mx-xmin+1,iy-my-ymin+1,iz-mz-zmin+1)*Hr(mo,jo,mx-xmin+1,my-ymin+1,mz-zmin+1)
+                      endif
+                    enddo
+                  enddo
+                enddo
+              enddo
+            enddo
+          enddo
+        enddo
+      enddo
+    enddo
+    pmn=pmn*pre_fact
+  case default
+    print *, 'Unknown method!!'
+    call abort
+end select
+END SUBROUTINE
 
 FUNCTION norm(vector)
 implicit none

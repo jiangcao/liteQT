@@ -1,7 +1,7 @@
 PROGRAM main
-USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks
+USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks
 use green, only : green_calc_g, green_solve_gw_3D
-use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d
+use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,nky,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac,iky,ik
@@ -10,6 +10,7 @@ real(8) :: ky, emax, emin
 real(8), allocatable::phix(:),ek(:,:),B(:),en(:)
 complex(8), allocatable :: H00(:,:),H10(:,:),H01(:,:),tmpV(:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: Hii,H1i,Vii,V1i
+complex(8), allocatable,dimension(:,:,:,:,:) :: Pii,P1i
 complex(8), allocatable :: H00ld(:,:,:,:),H10ld(:,:,:,:),T(:,:,:,:),V(:,:,:),Ham(:,:,:),invV(:,:,:)
 complex(8), allocatable,dimension(:,:,:,:) :: G_retarded,G_lesser,G_greater
 complex(8), allocatable,dimension(:,:,:,:) :: P_retarded,P_lesser,P_greater
@@ -267,7 +268,9 @@ if (ltrans) then
 !    allocate(V(nm*length,nm*length,nky*nkz))   
     allocate(Vii(nm,nm,length,nk))
     allocate(V1i(nm,nm,length,nk))    
-    allocate(pot(length))    
+    allocate(Pii(nm,nm,3,length,nk))
+    allocate(P1i(nm,nm,3,length,nk))    
+    allocate(pot(length*NS))    
     if (nkz>1) then
       dkz=2.0d0*pi/Lz / dble(nkz)
     else
@@ -278,20 +281,55 @@ if (ltrans) then
     else
       dky=pi/Ly
     endif
+    open(unit=10,file='Hii.dat',status='unknown')
+    open(unit=11,file='H1i.dat',status='unknown')
+    open(unit=20,file='Vii.dat',status='unknown')
+    open(unit=21,file='V1i.dat',status='unknown')
     do iky=1,nky
       ky=-pi/Ly + dble(iky)*dky
       do ikz=1,nkz
         kz=-pi/Lz + dble(ikz)*dkz
         ik=ikz+(iky-1)*nkz
+        write(10,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+        write(11,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+        write(20,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+        write(21,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
         ! get Ham blocks
         call w90_MAT_DEF(Hii(:,:,1,ik),H1i(:,:,1,ik),0.0d0, ky,kz,NS)
+        !
+        call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
+        !
+        call w90_momentum_blocks(Pii(:,:,:,1,ik),P1i(:,:,:,1,ik),0.0d0,ky,kz,NS,'approx')
+        ! write Ham blocks
+        do i=1,nm
+          do j=1,nm
+            write(10,'(2I6,2F15.6)') i,j,dble(Hii(i,j,1,ik)),aimag(Hii(i,j,1,ik))
+            write(11,'(2I6,2F15.6)') i,j,dble(H1i(i,j,1,ik)),aimag(H1i(i,j,1,ik))
+            write(20,'(2I6,2F15.6)') i,j,dble(Vii(i,j,1,ik)),aimag(Vii(i,j,1,ik))
+            write(21,'(2I6,2F15.6)') i,j,dble(V1i(i,j,1,ik)),aimag(V1i(i,j,1,ik))
+          enddo
+        enddo
+        write(10,*)
+        write(11,*)
+        write(20,*)
+        write(21,*)
         ! build device Ham 
         do i=2,length
           Hii(:,:,i,ik)=Hii(:,:,1,ik)
           H1i(:,:,i,ik)=H1i(:,:,1,ik)
+          !
+          Vii(:,:,i,ik)=Vii(:,:,1,ik)
+          V1i(:,:,i,ik)=V1i(:,:,1,ik)
+          !
+          Pii(:,:,:,i,ik)=Pii(:,:,:,1,ik)
+          P1i(:,:,:,i,ik)=P1i(:,:,:,1,ik)
         enddo
       enddo
     enddo
+    close(10)
+    close(11)
+    close(20)
+    close(21)
     !
     open(unit=11,file='ek.dat',status='unknown')
     allocate(H00(nb*ns,nb*ns))
@@ -300,22 +338,22 @@ if (ltrans) then
     do iky=1,nky
       ky=-pi/Ly + dble(iky)*dky
       do ikz=1,nkz
-          kz=-pi/Lz + dble(ikz)*dkz
-          ik=ikz+(iky-1)*nkz          
-          ! write bands into ek.dat                                      
-          phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
-          do i=1,nkx
-              H00(:,:) = Hii(:,:,1,ik)                          
-              H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,1,ik)
-              H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,1,ik)))
-              ek(:,i) = eig(NB*NS,H00)
-          enddo              
-          do j=1,nb*NS
-              do i=1,nkx
-                  write(11,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
-              enddo
-              write(11,*)
-          enddo                      
+        kz=-pi/Lz + dble(ikz)*dkz
+        ik=ikz+(iky-1)*nkz          
+        ! write bands into ek.dat                                      
+        phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
+        do i=1,nkx
+            H00(:,:) = Hii(:,:,1,ik)                          
+            H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,1,ik)
+            H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,1,ik)))
+            ek(:,i) = eig(NB*NS,H00)
+        enddo              
+        do j=1,nb*NS
+            do i=1,nkx
+                write(11,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
+            enddo
+            write(11,*)
+        enddo                      
       enddo
     enddo
     deallocate(H00)    
@@ -324,37 +362,40 @@ if (ltrans) then
     !
     pot(:) = 0.0d0
     if (lreadpot) then
-        open(unit=10,file='pot_dat',status='unknown')
-        do i = 1,length
-            read(10,*) pot(i)
-        end do
-        close(10)
-        pot=pot*potscale
+      open(unit=10,file='pot_dat',status='unknown')
+      do i = 1,length*NS
+          read(10,*) pot(i)
+      end do
+      close(10)
+      pot=pot*potscale
+      ! add on potential    
+      do ik=1,nk
+        do j = 1,length
+          do k = 1,NS
+            do ib = 1,nb
+              Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS+k)
+            enddo
+          enddo
+        enddo      
+      enddo
     end if             
     allocate(en(nen))
     en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
-    ! add on potential    
-    do ik=1,nk
-      do j = 1,length
-        do ib = 1,nb
-          Hii(ib,ib,j,ik)=Hii(ib,ib,j,ik) + pot(j)
-        enddo
-      enddo      
-    enddo
-    do iky=1,nky
-      ky=-pi/Ly + dble(iky)*dky
-      do ikz=1,nkz
-        kz=-pi/Lz + dble(ikz)*dkz
-        ik=ikz+(iky-1)*nkz
-        ! coulomb operator blocks
-        call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
-        !
-        do i=2,length
-          Vii(:,:,i,ik)=Vii(:,:,1,ik)
-          V1i(:,:,i,ik)=V1i(:,:,1,ik)
-        enddo
-      enddo
-    enddo
+    
+!    do iky=1,nky
+!      ky=-pi/Ly + dble(iky)*dky
+!      do ikz=1,nkz
+!        kz=-pi/Lz + dble(ikz)*dkz
+!        ik=ikz+(iky-1)*nkz
+!        ! coulomb operator blocks
+!        call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
+!        !
+!        do i=2,length
+!          Vii(:,:,i,ik)=Vii(:,:,1,ik)
+!          V1i(:,:,i,ik)=V1i(:,:,1,ik)
+!        enddo
+!      enddo
+!    enddo
 !    do iky=1,nky
 !      ky=-pi/Ly + dble(iky)*dky
 !      do ikz=1,nkz
@@ -364,15 +405,21 @@ if (ltrans) then
 !          call w90_bare_coulomb_full_device(V(:,:,ik),ky,kz,length*NS,eps_screen,r0,ldiag)      
 !      enddo
 !    enddo
+
     if (ldiag) then
       ndiag=0
     else
       ndiag=NB*NS
     endif
-    call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+    if (lephot) then
+      call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+    else
+      call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+    endif
     deallocate(Hii,H1i)
     !deallocate(V)
     deallocate(Vii,V1i)
+    deallocate(Pii,P1i)
     deallocate(pot)
     deallocate(en)
   endif        
