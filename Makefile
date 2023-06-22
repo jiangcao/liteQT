@@ -6,7 +6,7 @@ FC90 = /home/jiacao/openmpi/4.1.1-ifort/bin/mpif90
 MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
 #F90_FLAGS =  -I"${MKLROOT}/include" -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul # -check bounds  
 
-F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul -heap-arrays # -check bounds  
+F90_FLAGS =  -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul -heap-arrays -check bounds  
 
 #LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl
 

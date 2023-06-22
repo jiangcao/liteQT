@@ -43,6 +43,8 @@ SUBROUTINE w90_free_memory()
 END SUBROUTINE w90_free_memory
 
 SUBROUTINE w90_load_from_file(fid,lreorder_axis,axis)
+use, intrinsic :: iso_fortran_env
+use mpi_f08
 implicit none
 integer, intent(in) :: fid
 logical, intent(in), optional :: lreorder_axis
@@ -52,6 +54,12 @@ character(len=40) :: line, comment
 REAL(8) :: dky,dkz,aux1(3),aux2(3,3)
 integer, allocatable :: ind(:)
 REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
+
+integer(kind=int32) :: rank
+integer(kind=int32) :: ierror
+! Get the individual process (rank)
+call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierror)
+
     read(fid,*) nvb, spin_deg ! number of VBs, spin-degeneracy
     read(fid,*) comment
     read(fid,*) alpha
@@ -97,11 +105,13 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     Ly=abs(dot_product(beta,yhat)); ! L is in unit of A
     Lx=abs(dot_product(alpha,xhat));
     Lz=norm(gamm)
+if (rank == 0) then    
     print '(A40)', 'reading Wannier H from file, info:'
     print '(8a5)', 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax', 'nb', 'nvb'
     print '(8i5)', xmin, xmax, ymin, ymax,zmin,zmax, nb, nvb
     print '(3a5)', 'Lx', 'Ly', 'Lz'
     print '(3f5.1)', Lx, Ly, Lz   
+endif    
     b1=cross(beta,gamm)/dot_product(alpha,cross(beta,gamm))
     b2 = cross(gamm,alpha)/dot_product(beta,cross(gamm,alpha))    
     allocate(Hr(nb,nb,nx,ny,nz))
@@ -110,7 +120,7 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
         Hr(floor(ham(i,4)),floor(ham(i,5)),floor(ham(i,1))-xmin+1,&
         &floor(ham(i,2))-ymin+1,floor(ham(i,3))-zmin+1) = ham(i,6) + z1j*ham(i,7);
     end do    
-    print *, 'Find CBM and VBM'
+    !print *, 'Find CBM and VBM'
     nkx=floor((1.0d0/Lx)/0.01d0)+1
     nky=floor((1.0d0/Ly)/0.01d0)+1    
     nkz=floor((1.0d0/Lz)/0.01d0)+1
@@ -154,11 +164,13 @@ REAL(8), allocatable :: ham(:,:), energ(:,:), aux3(:,:)
     ind = minloc(energ,2)
     CBM = energ(nvb+1,ind(nvb+1))
     Eg = CBM-VBM
+if (rank == 0) then    
     print '(3A8)','CBM','VBM','Eg'
     print '(3f8.3)', CBM, VBM, CBM-VBM
     print '(3A8)','kt_CBM','kt_VBM','2pi/Ly'
     print '(2f8.3)', kt_cbm/(2.0*pi/Ly), kt_vbm/(2.0*pi/Ly)
     print '(A40)', 'reading Wannier centers from file'
+endif    
     read(fid,*) comment    
     allocate(wannier_center(3,nb))
     do i=1,nb
