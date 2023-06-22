@@ -3,12 +3,13 @@
 
 module green_rgf
 use green,only:get_OBC_blocks_for_W,get_dL_OBC_for_W    
+use mpi
 
 implicit none 
 
 private
 
-public :: green_rgf_cms, green_rgf_solve_gw_1d, green_rgf_calc_w
+public :: green_rgf_cms, green_rgf_solve_gw_1d
 public :: green_rgf_solve_gw_3d
 public :: green_rgf_solve_gw_ephoton_3d
 
