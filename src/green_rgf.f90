@@ -387,6 +387,10 @@ use mpi_f08
   ! Get the individual process (rank)
   call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierror)
   call MPI_Comm_size(MPI_COMM_WORLD, num_proc, ierror)
+  allocate(scount(num_proc))
+  allocate(rcount(num_proc))
+  allocate(sdispls(num_proc))
+  allocate(rdispls(num_proc))
   !
   call MPI_Barrier(MPI_COMM_WORLD)
   if (rank == 0) then
@@ -394,7 +398,7 @@ use mpi_f08
   endif
   !
   nnode=nky*nkz
-  nk=nky*nkz/nnode
+  nk=nky*nkz/nnode  
   !  
   !
   allocate(g_r_local_k(nm,nm,nx,nen,nk))  
@@ -431,6 +435,7 @@ use mpi_f08
     endif
     !
     do ik=1,nk
+      call MPI_Barrier(MPI_COMM_WORLD)
       print *, ' ik=', ik+(rank)*nk,'/',nky*nkz
       !$omp parallel default(none) private(ie) shared(ik,nen,temp,nm,nk,nx,rank,en,mu,Hii,H1i,sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k,g_lesser_local_k,g_greater_local_k,g_r_local_k,tre_local_k,tr_local_k,cur_local_k)    
       !$omp do 
@@ -500,17 +505,14 @@ use mpi_f08
     !!! all-to-all communication to make G local in x
     !!! G(:,:,ix,:,ik=rank) --> buff(:,:,:) --> G(:,:,ix=rank,:,ik)
     allocate(sbuf(nm,nm,nen,nx))
-    allocate(rbuf(nm,nm,nen,nky*nkz))
-    allocate(scount(num_proc))
-    allocate(rcount(num_proc))
-    allocate(sdispls(num_proc))
-    allocate(rdispls(num_proc))
+    allocate(rbuf(nm,nm,nen,nky*nkz))    
     scount=nm*nm*nen
     sdispls(1)=0
     do ik=2,num_proc
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
     rcount=nm*nm*nen
+    rdispls(1)=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -615,6 +617,7 @@ use mpi_f08
       sdispls(ix)=sdispls(ix-1)+scount(ix-1)
     enddo
     rcount=nm*nm*nen
+    rdispls(1)=0
     do ik=2,num_proc
       rdispls(ik)=rdispls(ik-1)+rcount(ik-1)
     enddo
@@ -723,6 +726,7 @@ use mpi_f08
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
     rcount=nm*nm*nen
+    rdispls(1)=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -774,6 +778,7 @@ use mpi_f08
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
     rcount=nm*nm*nen
+    rdispls(1)=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -813,6 +818,7 @@ use mpi_f08
     Sigma_greater_new_local_x = dcmplx(0.0d0,0.0d0)
     Sigma_lesser_new_local_x = dcmplx(0.0d0,0.0d0)
     Sigma_r_new_local_x = dcmplx(0.0d0,0.0d0)    
+    call MPI_Barrier(MPI_COMM_WORLD)
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
     !$omp parallel default(none) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd) shared(ndiag,nopmax,w_lesser_local_x,w_greater_local_x,w_retarded_local_x,sigma_lesser_new_local_x,sigma_greater_new_local_x,sigma_r_new_local_x,nen,En,nm,G_lesser_local_x,G_greater_local_x,G_r_local_x,nx,nkz,nky,nk)    
     !$omp do    
@@ -948,11 +954,11 @@ use mpi_f08
 !      Sigma_lesser_gw(:,:,nx-ix+1,:,:)=Sigma_lesser_gw(:,:,nx-2,:,:)
 !      Sigma_greater_gw(:,:,nx-ix+1,:,:)=Sigma_greater_gw(:,:,nx-2,:,:)
 !    enddo    
-     deallocate(sigma_r_new_local_k,sigma_lesser_new_local_k,sigma_greater_new_local_k)
-     deallocate(scount,rcount,sdispls,rdispls)
+     deallocate(sigma_r_new_local_k,sigma_lesser_new_local_k,sigma_greater_new_local_k)     
   enddo  
   deallocate(g_r_local_k,g_lesser_local_k,g_greater_local_k,cur_local_k)  
   deallocate(sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k)     
+  deallocate(scount,rcount,sdispls,rdispls)
 end subroutine green_rgf_solve_gw_ephoton_3d_mpi
 
 
