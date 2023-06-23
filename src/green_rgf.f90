@@ -680,9 +680,14 @@ use mpi_f08
     call MPI_Reduce(P_greater_local_k, P_greater, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     P_greater=P_greater/dble(nnode)   
-    call write_spectrum_summed_over_k('gw_PR',iter,P_r,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum_summed_over_k('gw_PL',iter,P_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum_summed_over_k('gw_PG',iter,P_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !
+    call MPI_Barrier(MPI_COMM_WORLD)
+    if (rank == 0) then  
+      call write_spectrum_summed_over_k('gw_PR',iter,P_r,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('gw_PL',iter,P_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('gw_PG',iter,P_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    endif
+    !
     deallocate(P_r,P_greater,P_lesser)
     if (rank == 0) then  
       print *, 'calc W'                
@@ -718,9 +723,11 @@ use mpi_f08
     call MPI_Reduce(W_greater_local_k, W_greater, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     W_greater=W_greater/dble(nnode)       
-    call write_spectrum_summed_over_k('gw_WR',iter,W_r       ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum_summed_over_k('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum_summed_over_k('gw_WG',iter,W_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))    
+    if (rank == 0) then  
+        call write_spectrum_summed_over_k('gw_WR',iter,W_r       ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+        call write_spectrum_summed_over_k('gw_WL',iter,W_lesser  ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+        call write_spectrum_summed_over_k('gw_WG',iter,W_greater ,nen,En-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))    
+    endif
     deallocate(W_r,W_greater,W_lesser)    
     !
     allocate(W_lesser_local_x(nm,nm,nen,nky*nkz,1))
@@ -1016,9 +1023,11 @@ use mpi_f08
       call MPI_Reduce(sigma_greater_new_local_k, sigma_greater_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                   MPI_SUM, 0, MPI_COMM_WORLD, ierror)
       sigma_greater_gw=sigma_greater_gw/dble(nnode) 
-      call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-      call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-      call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      if ( rank==0 ) then
+          call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+          call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+          call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      endif
     endif
     !!! make sure self-energy is continuous near leads by copying edge block
     do ix=1,2
