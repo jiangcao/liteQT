@@ -476,11 +476,11 @@ use mpi_f08
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     g_greater=g_greater/dble(nnode)
     call MPI_Barrier(MPI_COMM_WORLD)
-    call MPI_Reduce(tr_local_k, tr, nen*nk, MPI_C_DOUBLE_COMPLEX, &
+    call MPI_Reduce(tr_local_k, tr, nen*nk, MPI_DOUBLE, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     tr=tr/dble(nnode)       
     call MPI_Barrier(MPI_COMM_WORLD)
-    call MPI_Reduce(tre_local_k, tre, nen*nk, MPI_C_DOUBLE_COMPLEX, &
+    call MPI_Reduce(tre_local_k, tre, nen*nk, MPI_DOUBLE, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     tre=tre/dble(nnode)       
     if (rank == 0) then
@@ -1000,7 +1000,7 @@ use mpi_f08
       Sigma_r_gw_local_k       = Sigma_r_gw_local_k + Sigma_r_new_local_k 
       Sigma_lesser_gw_local_k  = Sigma_lesser_gw_local_k + Sigma_lesser_new_local_k 
       Sigma_greater_gw_local_k = Sigma_greater_gw_local_k + Sigma_greater_new_local_k 
-      !
+      ! 
       sigma_r_gw=czero
       sigma_lesser_gw=czero
       sigma_greater_gw=czero    
