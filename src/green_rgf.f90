@@ -361,6 +361,7 @@ use mpi_f08
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser,cur
   complex(8),allocatable,dimension(:,:,:,:,:)::P_r,P_greater,P_lesser
   complex(8),allocatable,dimension(:,:,:,:,:)::W_r,W_greater,W_lesser
+  complex(8),allocatable,dimension(:,:,:,:,:)::Sigma_r_gw,Sigma_lesser_gw,Sigma_greater_gw
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r_local_k,g_greater_local_k,g_lesser_local_k,cur_local_k
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r_local_x,g_greater_local_x,g_lesser_local_x
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k
@@ -506,13 +507,15 @@ use mpi_f08
     !!! G(:,:,ix,:,ik=rank) --> buff(:,:,:) --> G(:,:,ix=rank,:,ik)
     allocate(sbuf(nm,nm,nen,nx))
     allocate(rbuf(nm,nm,nen,nky*nkz))    
-    scount=nm*nm*nen
-    sdispls(1)=0
+    scount=0
+    scount(1:nx)=nm*nm*nen
+    sdispls=0
     do ik=2,num_proc
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
-    rcount=nm*nm*nen
-    rdispls(1)=0
+    rcount=0
+    rcount(1:nky*nkz)=nm*nm*nen
+    rdispls=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -522,6 +525,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_r_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo    
@@ -531,6 +535,7 @@ use mpi_f08
     enddo    
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_lesser_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo
@@ -540,6 +545,7 @@ use mpi_f08
     enddo    
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_greater_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo    
@@ -611,13 +617,15 @@ use mpi_f08
     !!! P(:,:,ix=rank,:,ik) --> buff(:,:,:) --> P(:,:,ix,:,ik=rank)
     allocate(rbuf(nm,nm,nen,nx))
     allocate(sbuf(nm,nm,nen,nky*nkz))    
-    scount=nm*nm*nen
-    sdispls(1)=0
+    scount=0
+    scount(1:nky*nkz)=nm*nm*nen
+    sdispls=0
     do ix=2,num_proc
       sdispls(ix)=sdispls(ix-1)+scount(ix-1)
     enddo
-    rcount=nm*nm*nen
-    rdispls(1)=0
+    rcount=0
+    rcount(1:nx)=nm*nm*nen
+    rdispls=0
     do ik=2,num_proc
       rdispls(ik)=rdispls(ik-1)+rcount(ik-1)
     enddo
@@ -627,6 +635,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ix=1,nx
       P_retarded_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -636,6 +645,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ix=1,nx
       P_lesser_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -645,6 +655,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ix=1,nx
       P_greater_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -720,13 +731,15 @@ use mpi_f08
     !!! W(:,:,ix,:,ik=rank) --> buff(:,:,:) --> W(:,:,ix=rank,:,ik)
     allocate(sbuf(nm,nm,nen,nx))
     allocate(rbuf(nm,nm,nen,nky*nkz))    
-    scount=nm*nm*nen
-    sdispls(1)=0
+    scount=0
+    scount(1:nx)=nm*nm*nen
+    sdispls=0
     do ik=2,num_proc
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
-    rcount=nm*nm*nen
-    rdispls(1)=0
+    rcount=0
+    rcount(1:nky*nkz)=nm*nm*nen
+    rdispls=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -736,6 +749,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       W_retarded_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo
@@ -745,6 +759,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       W_lesser_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo
@@ -754,6 +769,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       W_greater_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo    
@@ -772,13 +788,15 @@ use mpi_f08
     !!! G(:,:,ix,:,ik=rank) --> buff(:,:,:) --> G(:,:,ix=rank,:,ik)
     allocate(sbuf(nm,nm,nen,nx))
     allocate(rbuf(nm,nm,nen,nky*nkz))    
-    scount=nm*nm*nen
-    sdispls(1)=0
+    scount=0
+    scount(1:nx)=nm*nm*nen
+    sdispls=0
     do ik=2,num_proc
       sdispls(ik)=sdispls(ik-1)+scount(ik-1)
     enddo
-    rcount=nm*nm*nen
-    rdispls(1)=0
+    rcount=0
+    rcount(1:nky*nkz)=nm*nm*nen
+    rdispls=0
     do ix=2,num_proc
       rdispls(ix)=rdispls(ix-1)+rcount(ix-1)
     enddo
@@ -788,6 +806,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_r_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo    
@@ -797,6 +816,7 @@ use mpi_f08
     enddo    
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_lesser_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo
@@ -806,6 +826,7 @@ use mpi_f08
     enddo    
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ik=1,nky*nkz
       g_greater_local_x(:,:,:,ik,1)=rbuf(:,:,:,ik)
     enddo    
@@ -878,11 +899,25 @@ use mpi_f08
     allocate(sigma_r_new_local_k(nm,nm,nx,nen,nk)) 
     allocate(rbuf(nm,nm,nen,nx))
     allocate(sbuf(nm,nm,nen,nky*nkz))    
+    scount=0
+    scount(1:nky*nkz)=nm*nm*nen
+    sdispls=0
+    do ix=2,num_proc
+      sdispls(ix)=sdispls(ix-1)+scount(ix-1)
+    enddo
+    rcount=0
+    rcount(1:nx)=nm*nm*nen
+    rdispls=0
+    do ik=2,num_proc
+      rdispls(ik)=rdispls(ik-1)+rcount(ik-1)
+    enddo
+    !
     do ik=1,nky*nkz
       sbuf(:,:,:,ik)=Sigma_r_new_local_x(:,:,:,ik,1)
-    enddo
+    enddo    
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)    
     do ix=1,nx
       Sigma_r_new_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -892,6 +927,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ix=1,nx
       Sigma_lesser_new_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -901,6 +937,7 @@ use mpi_f08
     enddo
     call MPI_Barrier(MPI_COMM_WORLD)
     call MPI_ALLTOALLV(sbuf, scount, sdispls, MPI_C_DOUBLE_COMPLEX, rbuf, rcount, rdispls, MPI_C_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierror)
+    call MPI_Barrier(MPI_COMM_WORLD)
     do ix=1,nx
       Sigma_greater_new_local_k(:,:,ix,:,1)=rbuf(:,:,:,ix)
     enddo
@@ -926,35 +963,76 @@ use mpi_f08
     Sigma_lesser_gw_local_k  = Sigma_lesser_gw_local_k+ alpha_mix * (Sigma_lesser_new_local_k -Sigma_lesser_gw_local_k)
     Sigma_greater_gw_local_k = Sigma_greater_gw_local_k+ alpha_mix * (Sigma_greater_new_local_k -Sigma_greater_gw_local_k)  
     ! 
-!    call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!    call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!    call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!    !
-!    if (iter>=(niter-5)) then
-!      print *, 'calc SigEPhoton'
-!      do ik=1,nk
-!        print *, ' ik=', ik,'/',nk
-!        call calc_sigma_ephoton_monochromatic(nm,nx,nen,En,nopphot,Mii(:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),Sigma_r_new(:,:,:,:,ik),Sigma_lesser_new(:,:,:,:,ik),Sigma_greater_new(:,:,:,:,ik),pre_fact,intensity,hw)
-!      enddo
-!      Sigma_r_gw       = Sigma_r_gw + Sigma_r_new 
-!      Sigma_lesser_gw  = Sigma_lesser_gw + Sigma_lesser_new 
-!      Sigma_greater_gw = Sigma_greater_gw + Sigma_greater_new  
-!      call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!      call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!      call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-!    endif
-!    ! make sure self-energy is continuous near leads (by copying edge block)
-!    do ix=1,2
-!      Sigma_r_gw(:,:,ix,:,:)=Sigma_r_gw(:,:,3,:,:)
-!      Sigma_lesser_gw(:,:,ix,:,:)=Sigma_lesser_gw(:,:,3,:,:)
-!      Sigma_greater_gw(:,:,ix,:,:)=Sigma_greater_gw(:,:,3,:,:)
-!    enddo
-!    do ix=1,2
-!      Sigma_r_gw(:,:,nx-ix+1,:,:)=Sigma_r_gw(:,:,nx-2,:,:)
-!      Sigma_lesser_gw(:,:,nx-ix+1,:,:)=Sigma_lesser_gw(:,:,nx-2,:,:)
-!      Sigma_greater_gw(:,:,nx-ix+1,:,:)=Sigma_greater_gw(:,:,nx-2,:,:)
-!    enddo    
-     deallocate(sigma_r_new_local_k,sigma_lesser_new_local_k,sigma_greater_new_local_k)     
+    allocate(sigma_r_gw(nm,nm,nx,nen,nk))  
+    allocate(sigma_greater_gw(nm,nm,nx,nen,nk))
+    allocate(sigma_lesser_gw(nm,nm,nx,nen,nk))      
+    sigma_r_gw=czero
+    sigma_lesser_gw=czero
+    sigma_greater_gw=czero    
+    call MPI_Barrier(MPI_COMM_WORLD)
+    call MPI_Reduce(sigma_r_gw_local_k, sigma_r_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    sigma_r_gw=sigma_r_gw/dble(nnode)
+    call MPI_Barrier(MPI_COMM_WORLD)
+    call MPI_Reduce(sigma_lesser_gw_local_k, sigma_lesser_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    sigma_lesser_gw=sigma_lesser_gw/dble(nnode)
+    call MPI_Barrier(MPI_COMM_WORLD)
+    call MPI_Reduce(sigma_greater_gw_local_k, sigma_greater_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    sigma_greater_gw=sigma_greater_gw/dble(nnode)
+    !
+    if ( rank==0 ) then
+      call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    endif
+    !
+    if (iter>=(niter-5)) then
+      if ( rank==0 ) then
+        print *, 'calc SigEPhoton'
+      endif
+      do ik=1,nk
+        call MPI_Barrier(MPI_COMM_WORLD)
+        print *, ' ik=', ik+(rank)*nk,'/',nky*nkz
+        call calc_sigma_ephoton_monochromatic(nm,nx,nen,En,nopphot,Mii(:,:,:,ik+(rank)*nk),G_lesser_local_k(:,:,:,:,ik),G_greater_local_k(:,:,:,:,ik),Sigma_r_new_local_k(:,:,:,:,ik),Sigma_lesser_new_local_k(:,:,:,:,ik),Sigma_greater_new_local_k(:,:,:,:,ik),pre_fact,intensity,hw)
+      enddo
+      Sigma_r_gw_local_k       = Sigma_r_gw_local_k + Sigma_r_new_local_k 
+      Sigma_lesser_gw_local_k  = Sigma_lesser_gw_local_k + Sigma_lesser_new_local_k 
+      Sigma_greater_gw_local_k = Sigma_greater_gw_local_k + Sigma_greater_new_local_k 
+      !
+      sigma_r_gw=czero
+      sigma_lesser_gw=czero
+      sigma_greater_gw=czero    
+      call MPI_Barrier(MPI_COMM_WORLD)
+      call MPI_Reduce(sigma_r_new_local_k, sigma_r_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                  MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+      sigma_r_gw=sigma_r_gw/dble(nnode)
+      call MPI_Barrier(MPI_COMM_WORLD)
+      call MPI_Reduce(sigma_lesser_new_local_k, sigma_lesser_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                  MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+      sigma_lesser_gw=sigma_lesser_gw/dble(nnode)
+      call MPI_Barrier(MPI_COMM_WORLD)
+      call MPI_Reduce(sigma_greater_new_local_k, sigma_greater_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
+                  MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+      sigma_greater_gw=sigma_greater_gw/dble(nnode) 
+      call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    endif
+    !!! make sure self-energy is continuous near leads by copying edge block
+    do ix=1,2
+      Sigma_r_gw_local_k(:,:,ix,:,:)=Sigma_r_gw_local_k(:,:,3,:,:)
+      Sigma_lesser_gw_local_k(:,:,ix,:,:)=Sigma_lesser_gw_local_k(:,:,3,:,:)
+      Sigma_greater_gw_local_k(:,:,ix,:,:)=Sigma_greater_gw_local_k(:,:,3,:,:)
+    enddo
+    do ix=1,2
+      Sigma_r_gw_local_k(:,:,nx-ix+1,:,:)=Sigma_r_gw_local_k(:,:,nx-2,:,:)
+      Sigma_lesser_gw_local_k(:,:,nx-ix+1,:,:)=Sigma_lesser_gw_local_k(:,:,nx-2,:,:)
+      Sigma_greater_gw_local_k(:,:,nx-ix+1,:,:)=Sigma_greater_gw_local_k(:,:,nx-2,:,:)
+    enddo    
+    deallocate(sigma_r_new_local_k,sigma_lesser_new_local_k,sigma_greater_new_local_k)     
+    deallocate(sigma_r_gw,sigma_lesser_gw,sigma_greater_gw)
   enddo  
   deallocate(g_r_local_k,g_lesser_local_k,g_greater_local_k,cur_local_k)  
   deallocate(sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k)     
