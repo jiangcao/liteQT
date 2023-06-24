@@ -1,21 +1,21 @@
-3         !ns
+4         !ns
 10         !width
 200        !nkx
 1         ! num B 
 0.0 1.0 2.0 3.0 4.0  5.0 6.0 7.0 8.0             !B values
 1   ! axis of ribbon width
-128  ! num CPU
+25  ! max num of OpenMP thread per MPI 
 F   ! reorder axis
 F   ! quantum dot
 T   ! transport
-20        !length
--5.0  15.0   500    ! emin emax num_en
+16        !length
+-5.0  15.0   2000    ! emin emax num_en
 T   ! read potential from pot_dat
 -1
-6   ! num iter
+20   ! num iter
 2.0   ! epsilon screening
 3.0   ! r0
-3.3  2.72 ! mu_s mu_d 
+3.65  2.75 ! mu_s mu_d 
 300.0   300.0  ! temperature 
 0.5   ! alpha mix
 0.6  20.0  ! intraband interband cutoff energies for P and W
@@ -23,7 +23,7 @@ F     ! read Coulomb blocks
 T     ! only diag
 T     ! RGF
 T    ! 2D with ky,kz
-4  4    ! num ky kz
+4  4   ! num ky kz
 T    ! e photon
 1.0  0.0d10
 1.0  0.0   0.0

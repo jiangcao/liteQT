@@ -1267,14 +1267,14 @@ do iter=0,niter
   call write_current_spectrum_block('gw_Jdens',iter,cur,nen,en,length,NB,Lx)
   call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
   call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
-  call write_spectrum_block('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0,-2.0/))
-  call write_spectrum_block('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0,1.0/))
-  call write_spectrum_block('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0,-1.0/))
+  call write_spectrum_block('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum_block('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+  call write_spectrum_block('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
   call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
   call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
   call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
   call write_transmission_spectrum('gw_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)
-  call write_spectrum_block('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0,1.0/))
+  call write_spectrum_block('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
   G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
   G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
   G_greater=dcmplx(0.0d0*dble(G_greater),aimag(G_greater))
@@ -1595,8 +1595,8 @@ do ie = 1, ne
     do i=1,num_lead                      
       if (present(cur)) then
         fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
-        call zgemm('n','n',nm_dev,nm_dev,nm_dev,(1.0d0-fd),gamma_lead(:,:,i),nm_dev,G_lesser,nm_dev,czero,B,nm_dev)
-        call zgemm('n','n',nm_dev,nm_dev,nm_dev,fd,gamma_lead(:,:,i),nm_dev,G_greater,nm_dev,cone,B,nm_dev)
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,dcmplx(1.0d0-fd,0.0d0),gamma_lead(:,:,i),nm_dev,G_lesser,nm_dev,czero,B,nm_dev)
+        call zgemm('n','n',nm_dev,nm_dev,nm_dev,dcmplx(fd,0.0d0),gamma_lead(:,:,i),nm_dev,G_greater,nm_dev,cone,B,nm_dev)
         do io=1,nm_dev
           cur(ie,i)=cur(ie,i)+ dble(B(io,io))
         enddo
@@ -2335,8 +2335,8 @@ do ie = 1, ne
       do i=1,num_lead                      
         if (present(cur)) then
           fd = ferm((E(ie)-mu(i))/(BOLTZ*TEMP(i)))		
-          call zgemm('n','n',nm_dev,nm_dev,nm_dev,(1.0d0-fd),gamma_lead(:,:,i),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
-          call zgemm('n','n',nm_dev,nm_dev,nm_dev,fd,gamma_lead(:,:,i),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev)
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,dcmplx(1.0d0-fd,0.0d0),gamma_lead(:,:,i),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
+          call zgemm('n','n',nm_dev,nm_dev,nm_dev,dcmplx(fd,0.0d0),gamma_lead(:,:,i),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev)
           do io=1,nm_dev
             cur(ie,i)=cur(ie,i)+ dble(B(io,io))
           enddo
