@@ -497,6 +497,7 @@ use mpi_f08
       call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
       call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
       call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
+      call write_total_current('gw_I',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
       call write_transmission_spectrum_k('gw_trR',iter,tr*spindeg,nen,En,nk)
       call write_transmission_spectrum_k('gw_trL',iter,tre*spindeg,nen,En,nk)
       open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
@@ -2211,6 +2212,33 @@ subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
   enddo
   close(11)
 end subroutine write_current_spectrum
+
+! write current into file 
+subroutine write_total_current(dataset,i,cur,nen,en,length,NB,Lx,nk)
+  character(len=*), intent(in) :: dataset
+  complex(8), intent(in) :: cur(:,:,:,:,:)
+  integer, intent(in)::i,nen,length,NB,nk
+  real(8), intent(in)::Lx,en(nen)
+  integer:: ie,j,ib,jb,ik
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//'_'//TRIM(STRING(i))//'.dat',status='unknown')  
+  do j = 1,length-1
+    tr=0.0d0  
+    do ie = 1,nen                  
+      do ik = 1,nk
+        do ib=1,nb  
+          do jb=1,nb        
+            tr = tr+ cur(ib,jb,j,ie,ik)
+          enddo                        
+        enddo            
+      enddo  
+    enddo
+    tr=tr*dble(en(2)-en(1))
+    write(11,'(2E18.4)') dble(j-1)*Lx, dble(tr)
+  enddo
+  close(11)
+end subroutine write_total_current
+
 
 ! write current spectrum into file (pm3d map)
 subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,Lx,nk)
