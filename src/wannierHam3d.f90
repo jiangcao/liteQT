@@ -44,8 +44,7 @@ END SUBROUTINE w90_free_memory
 
 SUBROUTINE w90_load_from_file(fid,lreorder_axis,axis)
 use, intrinsic :: iso_fortran_env
-use mpi_f08
-implicit none
+include "mpif.h"
 integer, intent(in) :: fid
 logical, intent(in), optional :: lreorder_axis
 integer, intent(in), optional :: axis(3)

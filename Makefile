@@ -30,7 +30,7 @@ vpath %.o $(MODDIR)
 
 all: liteQT_3d_mpi.x 
 
-liteQT_3d_mpi.x : main3d.f90 wannierHam3d.o green.o green_rgf.o
+liteQT_3d_mpi.x : main3d.f90 mkl_dfti.o wannierHam3d.o green.o green_rgf.o
 
 	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
 

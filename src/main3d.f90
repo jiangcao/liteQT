@@ -4,9 +4,9 @@ use green, only : green_calc_g, green_solve_gw_3D
 use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d,green_rgf_solve_gw_ephoton_3d_mpi
 
 use, intrinsic :: iso_fortran_env
-use mpi_f08
+include "mpif.h"
    
-implicit none
+!implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,nky,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac,iky,ik
 integer,allocatable:: orb_vac(:)
