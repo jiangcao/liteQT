@@ -1,7 +1,8 @@
 PROGRAM main
+
 USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks
 use green, only : green_calc_g, green_solve_gw_3D
-use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d
+use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d, green_rgf_solve_gw_ephoton_3d_mpi
 implicit none
 real(8), parameter :: pi=3.14159265359d0
 integer :: NS, nm, ie, ne, width,nkx,nky,i,j,k,axis,num_B,ib,ncpu,xyz(3),length,num_vac,iky,ik
@@ -28,6 +29,32 @@ integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz,ndiag,nk
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2),dky
 real(8) :: intensity,hw,midgap(2),polaris(3)
+
+! MPI variables
+integer ( kind = 4 ) ierr
+integer ( kind = 4 ) comm_size
+integer ( kind = 4 ) comm_rank
+integer ( kind = 4 ) local_Nkz
+integer ( kind = 4 ) local_Nky
+integer ( kind = 4 ) local_NE
+integer ( kind = 4 ) first_local_energy
+
+include "mpif.h"
+
+call MPI_Init(ierr)
+call MPI_Comm_size(MPI_COMM_WORLD, comm_size, ierr)
+call MPI_Comm_rank(MPI_COMM_WORLD, comm_rank, ierr)
+
+call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
+if (comm_rank == 0) then
+  print *, 'Comm Size =', comm_size
+else
+  print *, 'Comm Rank =', comm_rank
+endif
+
+call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
 num_vac=0 ! number of vacancies
 open(unit=10,file='input',status='unknown')
 read(10,*) ns
@@ -79,6 +106,21 @@ if (ltrans) then
     endif
 end if
 close(10)
+
+call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
+if (mod(nen, comm_size) /= 0) then
+  if (comm_rank == 0) then
+    print *, 'Number of energies (', nen, ') must be divisible by comm_size (', comm_size, ')'
+  endif
+  call MPI_Finalize(ierr)
+  stop
+endif
+
+local_Nkz = nkz
+local_Nky = nky
+local_NE = nen / comm_size
+first_local_energy = local_NE * comm_rank + 1
 
 open(unit=10,file='ham_dat',status='unknown')
 call w90_load_from_file(10, reorder_axis,xyz)
@@ -258,9 +300,13 @@ if (ltrans) then
     endif
    else
     ! Long device, use RGF
-    print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'    
-    print *, 'Build the full device H'
-    print *, 'length=',length*NS,'uc =',length*NS*Lx/1.0d1,'(nm)'
+
+    if (comm_rank == 0) then
+      print *, '~~~~~~~~~~~~~~~~~ RGF ~~~~~~~~~~~~~~~~~'    
+      print *, 'Build the full device H'
+      print *, 'length=',length*NS,'uc =',length*NS*Lx/1.0d1,'(nm)'
+    endif
+
     nm=NB*NS
     nk=nky*nkz
     allocate(Hii(nm,nm,length,nk))
@@ -281,38 +327,50 @@ if (ltrans) then
     else
       dky=pi/Ly
     endif
-    open(unit=10,file='Hii.dat',status='unknown')
-    open(unit=11,file='H1i.dat',status='unknown')
-    open(unit=20,file='Vii.dat',status='unknown')
-    open(unit=21,file='V1i.dat',status='unknown')
+
+    if (comm_rank == 0) then
+      open(unit=10,file='Hii.dat',status='unknown')
+      open(unit=11,file='H1i.dat',status='unknown')
+      open(unit=20,file='Vii.dat',status='unknown')
+      open(unit=21,file='V1i.dat',status='unknown')
+    endif
+
     do iky=1,nky
       ky=-pi/Ly + dble(iky)*dky
       do ikz=1,nkz
         kz=-pi/Lz + dble(ikz)*dkz
         ik=ikz+(iky-1)*nkz
-        write(10,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-        write(11,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-        write(20,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-        write(21,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+
+        if (comm_rank == 0) then
+          write(10,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+          write(11,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+          write(20,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+          write(21,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+        endif
+
         ! get Ham blocks
         call w90_MAT_DEF(Hii(:,:,1,ik),H1i(:,:,1,ik),0.0d0, ky,kz,NS)
         !
         call w90_bare_coulomb_blocks(Vii(:,:,1,ik),V1i(:,:,1,ik),0.0d0,ky,kz,eps_screen,r0,ns,ldiag)
         !
         call w90_momentum_blocks(Pii(:,:,:,1,ik),P1i(:,:,:,1,ik),0.0d0,ky,kz,NS,'approx')
+
         ! write Ham blocks
-        do i=1,nm
-          do j=1,nm
-            write(10,'(2I6,2F15.6)') i,j,dble(Hii(i,j,1,ik)),aimag(Hii(i,j,1,ik))
-            write(11,'(2I6,2F15.6)') i,j,dble(H1i(i,j,1,ik)),aimag(H1i(i,j,1,ik))
-            write(20,'(2I6,2F15.6)') i,j,dble(Vii(i,j,1,ik)),aimag(Vii(i,j,1,ik))
-            write(21,'(2I6,2F15.6)') i,j,dble(V1i(i,j,1,ik)),aimag(V1i(i,j,1,ik))
+        if (comm_rank == 0) then
+          do i=1,nm
+            do j=1,nm
+              write(10,'(2I6,2F15.6)') i,j,dble(Hii(i,j,1,ik)),aimag(Hii(i,j,1,ik))
+              write(11,'(2I6,2F15.6)') i,j,dble(H1i(i,j,1,ik)),aimag(H1i(i,j,1,ik))
+              write(20,'(2I6,2F15.6)') i,j,dble(Vii(i,j,1,ik)),aimag(Vii(i,j,1,ik))
+              write(21,'(2I6,2F15.6)') i,j,dble(V1i(i,j,1,ik)),aimag(V1i(i,j,1,ik))
+            enddo
           enddo
-        enddo
-        write(10,*)
-        write(11,*)
-        write(20,*)
-        write(21,*)
+          write(10,*)
+          write(11,*)
+          write(20,*)
+          write(21,*)
+        endif
+
         ! build device Ham 
         do i=2,length
           Hii(:,:,i,ik)=Hii(:,:,1,ik)
@@ -326,12 +384,16 @@ if (ltrans) then
         enddo
       enddo
     enddo
-    close(10)
-    close(11)
-    close(20)
-    close(21)
+
+    if (comm_rank == 0) then
+      close(10)
+      close(11)
+      close(20)
+      close(21)
+      open(unit=11,file='ek.dat',status='unknown')
+    endif
+
     !
-    open(unit=11,file='ek.dat',status='unknown')
     allocate(H00(nb*ns,nb*ns))
     allocate(phix(nkx))
     allocate(ek(nb*ns,nkx))
@@ -347,18 +409,26 @@ if (ltrans) then
             H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,1,ik)
             H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,1,ik)))
             ek(:,i) = eig(NB*NS,H00)
-        enddo              
-        do j=1,nb*NS
-            do i=1,nkx
-                write(11,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
-            enddo
-            write(11,*)
-        enddo                      
+        enddo  
+        
+        if (comm_rank == 0) then
+          do j=1,nb*NS
+              do i=1,nkx
+                  write(11,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
+              enddo
+              write(11,*)
+          enddo
+        endif  
+                    
       enddo
     enddo
     deallocate(H00)    
-    deallocate(ek,phix)            
-    close(11)
+    deallocate(ek,phix)
+    
+    if (comm_rank == 0) then
+      close(11)
+    endif
+
     !
     pot(:) = 0.0d0
     if (lreadpot) then
@@ -381,7 +451,7 @@ if (ltrans) then
     end if             
     allocate(en(nen))
     en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
-    
+      
 !    do iky=1,nky
 !      ky=-pi/Ly + dble(iky)*dky
 !      do ikz=1,nkz
@@ -411,11 +481,25 @@ if (ltrans) then
     else
       ndiag=NB*NS
     endif
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
+    if (comm_rank == 0) then
+      print *, 'Starting simulation ...'
+    endif
+
     if (lephot) then
-      call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+      if (comm_size == 1) then
+        call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+      else
+        call green_rgf_solve_gw_ephoton_3d_mpi(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs, comm_size, comm_rank, local_NE, first_local_energy)
+      endif
     else
       call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
     endif
+    
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
     deallocate(Hii,H1i)
     !deallocate(V)
     deallocate(Vii,V1i)
@@ -427,5 +511,8 @@ end if
 if (allocated(B)) deallocate(B)
 if (allocated(orb_vac)) deallocate(orb_vac)
 call w90_free_memory
-print *, 'End of program'
+if (comm_rank == 0) then
+  print *, 'End of program'
+endif
+call MPI_Finalize( ierr )
 END PROGRAM main
