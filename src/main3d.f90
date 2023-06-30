@@ -429,7 +429,11 @@ if (ltrans) then
       ndiag=NB*NS
     endif
     if (lephot) then
-      call green_rgf_solve_gw_ephoton_3d_mpi(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+      if (num_proc > 1) then
+        call green_rgf_solve_gw_ephoton_3d_mpi(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+      else
+        call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+      endif
     else
       call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
     endif

@@ -86,7 +86,8 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   ! -------- local variables
   real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser, g_r_i1
-  real(8),allocatable,dimension(:,:,:,:,:)::cur
+  real(8),allocatable,dimension(:,:,:,:,:)::cur,jdens
+  real(8),allocatable,dimension(:,:,:,:)::tot_cur,tot_ecur
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
   complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser,P_greater,P_retarded
@@ -107,6 +108,9 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   allocate(g_greater(nm,nm,nx,nen,nk))
   allocate(g_lesser(nm,nm,nx,nen,nk))
   allocate(cur(nm,nm,nx,nen,nk))
+  allocate(jdens(nb,nb,nx*ns,nen,nk))
+  allocate(tot_cur(nb,nb,nx*ns,nk))
+  allocate(tot_ecur(nb,nb,nx*ns,nk))
   allocate(sigma_lesser_gw(nm,nm,nx,nen,nk))
   allocate(sigma_greater_gw(nm,nm,nx,nen,nk))
   allocate(sigma_r_gw(nm,nm,nx,nen,nk))
@@ -149,14 +153,17 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       enddo
       !$omp end do 
       !$omp end parallel
+      call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))
     enddo
     !
     call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
-    call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
-    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
-    call write_transmission_spectrum_k('gw_trR',iter,tr*spindeg,nen,En,nk)
-    call write_transmission_spectrum_k('gw_trL',iter,tre*spindeg,nen,En,nk)
+    call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
+    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
+    call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
+    call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
+    call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+    call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
     open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
     write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
     close(101)
@@ -342,6 +349,7 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   deallocate(W_retarded,W_lesser,W_greater)
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
   deallocate(Mii)
+  deallocate(tot_cur,tot_ecur,jdens)
 end subroutine green_rgf_solve_gw_ephoton_3d
 
 
@@ -359,7 +367,8 @@ include "mpif.h"
   real(8), intent(in) :: hw ! hw is photon energy in eV
   ! -------- local variables
   real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
-  real(8),allocatable,dimension(:,:,:,:,:)::cur,cur_local_k
+  real(8),allocatable,dimension(:,:,:,:,:)::cur,cur_local_k,jdens,jdens_local_k
+  real(8),allocatable,dimension(:,:,:,:)::tot_cur,tot_ecur,tot_cur_local_k,tot_ecur_local_k
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser
   complex(8),allocatable,dimension(:,:,:,:,:)::P_r,P_greater,P_lesser
   complex(8),allocatable,dimension(:,:,:,:,:)::W_r,W_greater,W_lesser
@@ -402,10 +411,7 @@ include "mpif.h"
   !
   allocate(g_r_local_k(nm,nm,nx,nen,nk))  
   allocate(g_greater_local_k(nm,nm,nx,nen,nk))
-  allocate(g_lesser_local_k(nm,nm,nx,nen,nk))      
-  allocate(cur_local_k(nm,nm,nx,nen,nk))
-  allocate(tr_local_k(nen,nk))  
-  allocate(tre_local_k(nen,nk))  
+  allocate(g_lesser_local_k(nm,nm,nx,nen,nk))        
   !
   allocate(sigma_lesser_gw_local_k(nm,nm,nx,nen,nk))
   allocate(sigma_greater_gw_local_k(nm,nm,nx,nen,nk))
@@ -433,6 +439,13 @@ include "mpif.h"
       print *, 'calc G'      
     endif
     !
+    allocate(cur_local_k(nm,nm,nx,nen,nk))      
+    allocate(jdens_local_k(nb,nb,nx*ns,nen,nk))
+    allocate(tot_cur_local_k(nb,nb,nx*ns,nk))
+    allocate(tot_ecur_local_k(nb,nb,nx*ns,nk))
+    allocate(tr_local_k(nen,nk))  
+    allocate(tre_local_k(nen,nk))  
+    !
     do ik=1,nk
       call MPI_Barrier(MPI_COMM_WORLD,ierror)
       !print *, ' ik=', ik+(rank)*nk,'/',nky*nkz      
@@ -446,34 +459,35 @@ include "mpif.h"
                         & tre_local_k(ie,ik),cur_local_k(:,:,:,ie,ik)) 
       enddo
       !$omp end do 
-      !$omp end parallel      
-    enddo      
-    call write_spectrum_summed_over_k('gw_ldos_k'//string(rank),iter,g_r_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
-    call write_spectrum_summed_over_k('gw_ndos_k'//string(rank),iter,g_lesser_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
-    call write_spectrum_summed_over_k('gw_pdos_k'//string(rank),iter,g_greater_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
-    call write_current_spectrum_summed_over_kz('gw_Jdens_k'//string(rank),iter,cur_local_k,nen,En,nx,NB*NS,Lx*NS,nk)  
-    call write_transmission_spectrum_k('gw_trR_k'//string(rank),iter,tr_local_k*spindeg,nen,En,nk)
-    call write_transmission_spectrum_k('gw_trL_k'//string(rank),iter,tre_local_k*spindeg,nen,En,nk)
+      !$omp end parallel  
+      call calc_block_current(Hii(:,:,:,ik),G_lesser_local_k(:,:,:,:,ik),cur_local_k(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur_local_k(:,:,:,ik),tot_ecur_local_k(:,:,:,ik),jdens_local_k(:,:,:,:,ik))    
+    enddo          
+    call write_spectrum_summed_over_k('gw_ldos_r'//string(rank),iter,g_r_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
+    call write_spectrum_summed_over_k('gw_ndos_r'//string(rank),iter,g_lesser_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
+    call write_spectrum_summed_over_k('gw_pdos_r'//string(rank),iter,g_greater_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
+    call write_current_spectrum_summed_over_kz('gw_Jdens_r'//string(rank),iter,jdens_local_k,nen,En,nx*ns,NB,Lx,nk)  
+    call write_transmission_spectrum_k('gw_trR_r'//string(rank),iter,tr_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+    call write_transmission_spectrum_k('gw_trL_r'//string(rank),iter,tre_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
     !!! reduce to sum up k points
     allocate(g_r(nm,nm,nx,nen,nk))  
     allocate(g_greater(nm,nm,nx,nen,nk))
     allocate(g_lesser(nm,nm,nx,nen,nk))  
-    allocate(cur(nm,nm,nx,nen,nk))
+    allocate(jdens(nb,nb,nx*ns,nen,nk))
+    allocate(tot_cur(nb,nb,nx*ns,nk))
+    allocate(tot_ecur(nb,nb,nx*ns,nk))
     allocate(tr(nen,nk))  
     allocate(tre(nen,nk))  
     g_r=czero
     g_lesser=czero
     g_greater=czero
-    cur=0.0d0
+    jdens=0.0d0
+    tot_cur=0.0d0
+    tot_ecur=0.0d0
     tr=0.0d0
     tre=0.0d0
     if (rank == 0) then
       print *,' reduce'
-    endif
-    call MPI_Barrier(MPI_COMM_WORLD,ierror)
-    call MPI_Reduce(cur_local_k, cur, nm*nm*nx*nen*nk, MPI_DOUBLE, &
-                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
-    cur=cur/dble(nnode)        
+    endif    
     call MPI_Barrier(MPI_COMM_WORLD,ierror)
     call MPI_Reduce(g_r_local_k, g_r, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
@@ -494,19 +508,34 @@ include "mpif.h"
     call MPI_Reduce(tre_local_k, tre, nen*nk, MPI_DOUBLE, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     tre=tre/dble(nnode)       
+    call MPI_Barrier(MPI_COMM_WORLD,ierror)
+    call MPI_Reduce(jdens_local_k, jdens, nb*nb*nx*ns*nen*nk, MPI_DOUBLE, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    jdens=jdens/dble(nnode)       
+    call MPI_Barrier(MPI_COMM_WORLD,ierror)
+    call MPI_Reduce(tot_cur_local_k, tot_cur, nb*nb*nx*ns*nk, MPI_DOUBLE, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    tot_cur=tot_cur/dble(nnode)       
+    call MPI_Barrier(MPI_COMM_WORLD,ierror)
+    call MPI_Reduce(tot_ecur_local_k, tot_ecur, nb*nb*nx*ns*nk, MPI_DOUBLE, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    tot_ecur=tot_ecur/dble(nnode)       
     if (rank == 0) then
       call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
       call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
       call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
-      call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
-      call write_total_current('gw_I',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)  
-      call write_transmission_spectrum_k('gw_trR',iter,tr*spindeg,nen,En,nk)
-      call write_transmission_spectrum_k('gw_trL',iter,tre*spindeg,nen,En,nk)
+      call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
+      call write_current_spectrum_summed_over_kz('gw_Jdens'//string(rank),iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
+      call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
+      call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)      
+      call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+      call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
       open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
       write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
       close(101)
     endif
-    deallocate(g_r,g_greater,g_lesser,cur,tr,tre)
+    deallocate(g_r,g_greater,g_lesser,tot_cur,tot_ecur,jdens,tr,tre)
+    deallocate(jdens_local_k,tot_cur_local_k,tot_ecur_local_k,tr_local_k,tre_local_k)
     !!!
     g_r_local_k = dcmplx( 0.0d0*dble(g_r_local_k), aimag(g_r_local_k))
     g_lesser_local_k = dcmplx( 0.0d0*dble(g_lesser_local_k), aimag(g_lesser_local_k))
@@ -1053,7 +1082,7 @@ include "mpif.h"
     deallocate(sigma_r_new_local_k,sigma_lesser_new_local_k,sigma_greater_new_local_k)     
     deallocate(sigma_r_gw,sigma_lesser_gw,sigma_greater_gw)
   enddo  
-  deallocate(g_r_local_k,g_lesser_local_k,g_greater_local_k,cur_local_k)  
+  deallocate(g_r_local_k,g_lesser_local_k,g_greater_local_k)  
   deallocate(sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k)       
 end subroutine green_rgf_solve_gw_ephoton_3d_mpi
 
@@ -1067,7 +1096,8 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   !complex(8), intent(in):: V(nm*nx,nm*nx,nky*nkz)
   ! -------- local variables
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser, g_r_i1
-  real(8),allocatable,dimension(:,:,:,:,:)::cur
+  real(8),allocatable,dimension(:,:,:,:,:)::cur,jdens
+  real(8),allocatable,dimension(:,:,:,:)::tot_cur,tot_ecur
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
   complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser,P_greater,P_retarded
@@ -1087,6 +1117,9 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   allocate(g_greater(nm,nm,nx,nen,nk))
   allocate(g_lesser(nm,nm,nx,nen,nk))
   allocate(cur(nm,nm,nx,nen,nk))
+  allocate(jdens(nb,nb,nx*ns,nen,nk))
+  allocate(tot_cur(nb,nb,nx*ns,nk))
+  allocate(tot_ecur(nb,nb,nx*ns,nk))
   allocate(sigma_lesser_gw(nm,nm,nx,nen,nk))
   allocate(sigma_greater_gw(nm,nm,nx,nen,nk))
   allocate(sigma_r_gw(nm,nm,nx,nen,nk))
@@ -1121,14 +1154,17 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
       enddo
       !$omp end do 
       !$omp end parallel
+      call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))
     enddo
     !
     call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
     call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
-    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,cur,nen,En,nx,NB*NS,Lx*NS,nk)          
-    call write_transmission_spectrum_k('gw_trR',iter,tr*spindeg,nen,En,nk)
-    call write_transmission_spectrum_k('gw_trL',iter,tre*spindeg,nen,En,nk)
+    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)        
+    call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
+    call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
+    call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+    call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
     open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
     write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
     close(101)
@@ -1298,6 +1334,7 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
   deallocate(W_retarded,W_lesser,W_greater)
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
+  deallocate(tot_cur,tot_ecur,jdens)
 end subroutine green_rgf_solve_gw_3d
 
 
@@ -2195,6 +2232,49 @@ close(11)
 end subroutine write_spectrum
 
 
+! calculate bond current within each block using I_ij = H_ij G<_ji - H_ji G^<_ij
+subroutine calc_block_current(H,G_lesser,cur,nen,en,spindeg,nb,ns,nm,nx,tot_cur,tot_ecur,jdens)
+complex(8),intent(in)::H(nm,nm,nx),G_lesser(nm,nm,nx,nen)
+real(8),intent(in)::cur(nm,nm,nx,nen)
+real(8),intent(in)::en(nen),spindeg
+integer,intent(in)::nen,nm,nx,nb,ns ! number of E and device dimension
+real(8),intent(out)::tot_cur(nb,nb,nx*ns) ! total bond current density
+real(8),intent(out),optional::tot_ecur(nb,nb,nx*ns) ! total bond energy current density
+real(8),intent(out),optional::jdens(nb,nb,nx*ns,nen) ! energy resolved bond current density
+!----
+complex(8),allocatable::B(:,:)
+integer::ie,io,jo,ix,ib,i,j,l
+real(8),parameter::tpi=6.28318530718  
+  allocate(B(nb,nb))
+  tot_cur=0.0d0  
+  tot_ecur=0.0d0
+  do ie=1,nen
+    do ix=1,nx
+      do ib=1,(ns-1)
+        do io=1,nb
+          do jo=1,nb
+            i=io+(ib-1)*nb
+            j=jo+(ib)*nb
+            B(io,jo)=H(i,j,ix)*G_lesser(j,i,ix,ie) - H(j,i,ix)*G_lesser(i,j,ix,ie)
+          enddo
+        enddo    
+        B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+        l=(ix-1)*ns+ib
+        if (present(jdens)) jdens(:,:,l,ie) = dble(B)
+        if (present(tot_ecur)) tot_ecur(:,:,l)=tot_ecur(:,:,l) + en(ie)*dble(B)
+        tot_cur(:,:,l)=tot_cur(:,:,l) + dble(B)          
+      enddo
+      l=ix*ns            
+      if (present(jdens)) jdens(:,:,l,ie) = dble(B)
+      if (present(tot_ecur)) tot_ecur(:,:,l)=tot_ecur(:,:,l) + en(ie)*dble(B)
+      tot_cur(:,:,l)=tot_cur(:,:,l) + dble(B)      
+    enddo
+  enddo
+  deallocate(B)
+end subroutine calc_block_current
+
+
+
 ! write current spectrum into file (pm3d map)
 subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
   character(len=*), intent(in) :: dataset
@@ -2219,31 +2299,6 @@ subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
   close(11)
 end subroutine write_current_spectrum
 
-! write current into file 
-subroutine write_total_current(dataset,i,cur,nen,en,length,NB,Lx,nk)
-  character(len=*), intent(in) :: dataset
-  real(8), intent(in) :: cur(:,:,:,:,:)
-  integer, intent(in)::i,nen,length,NB,nk
-  real(8), intent(in)::Lx,en(nen)
-  integer:: ie,j,ib,jb,ik
-  real(8)::tr
-  open(unit=11,file=trim(dataset)//'_'//TRIM(STRING(i))//'.dat',status='unknown')  
-  do j = 1,length-1
-    tr=0.0d0  
-    do ie = 1,nen                  
-      do ik = 1,nk
-        do ib=1,nb  
-          do jb=1,nb        
-            tr = tr+ cur(ib,jb,j,ie,ik)
-          enddo                        
-        enddo            
-      enddo  
-    enddo
-    tr=tr*dble(en(2)-en(1))*e0/tpi/hbar*e0
-    write(11,'(2E18.4)') dble(j-1)*Lx, dble(tr)
-  enddo
-  close(11)
-end subroutine write_total_current
 
 
 ! write current spectrum into file (pm3d map)
@@ -2273,6 +2328,28 @@ subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,
 end subroutine write_current_spectrum_summed_over_kz
 
 
+! write current into file 
+subroutine write_current_summed_over_k(dataset,i,cur,nx,NB,Lx,nk)
+character(len=*), intent(in) :: dataset
+real(8), intent(in) :: cur(:,:,:,:)
+integer, intent(in)::i,nx,NB,nk
+real(8), intent(in)::Lx
+integer:: j,ib,jb,ii,ik
+real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ii = 1,nx-1
+    tr=0.0d0          
+    do ib=1,nb  
+      do jb=1,nb       
+        do ik=1,nk
+          tr = tr + cur(ib,jb,ii,ik)
+        enddo
+      enddo                        
+    end do
+    write(11,'(2E18.4)') dble(ii-1)*Lx, tr
+  end do
+end subroutine write_current_summed_over_k
+
 ! write spectrum into file (pm3d map)
 subroutine write_spectrum_summed_over_k(dataset,i,G,nen,en,nk,length,NB,NS,Lx,coeff)
 character(len=*), intent(in) :: dataset
@@ -2299,6 +2376,32 @@ do ie = 1,nen
 end do
 close(11)
 end subroutine write_spectrum_summed_over_k
+
+! write dos into file
+subroutine write_dos_summed_over_k(dataset,i,G,nen,en,nk,length,NB,NS,Lx)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(NB*NS,NB*NS,length,nen,nk)
+integer, intent(in)::i,nen,length,NB,NS,nk
+real(8), intent(in)::en(nen),Lx
+integer:: ie,j,ib,k,ik
+complex(8)::tr
+open(unit=11,file=trim(dataset)//'_'//TRIM(STRING(i))//'.dat',status='unknown')
+do ie = 1,nen
+  tr=0.0d0         
+  do j=1,length
+    do k=1,NS             
+      do ik=1,nk
+        do ib=1,nb
+          tr = tr+ G(ib+(k-1)*NB,ib+(k-1)*NB,j,ie,ik)            
+        end do
+      enddo            
+    enddo
+  end do  
+  tr=tr/dble(nk)/dble(length)/dble(NS)/Lx
+  write(11,'(2E18.4)') en(ie), aimag(tr)*(-2.0d0)        
+end do
+close(11)
+end subroutine write_dos_summed_over_k
 
 ! write transmission spectrum into file
 subroutine write_transmission_spectrum(dataset,i,tr,nen,en)
