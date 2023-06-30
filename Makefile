@@ -9,7 +9,7 @@ MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
 #F90_FLAGS =  -I"${MKLROOT}/include" -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul # -check bounds  
 
 # F90_FLAGS =  -I /usr/pack/mpich-3.2.1-af/linux-x64/include -L /usr/pack/mpich-3.2.1-af/linux-x64/lib -lmpi -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul -heap-arrays # -check bounds  
-F90_FLAGS = -Wall -Wextra -O3 -march=native -ffast-math -ffree-line-length-none -fopenmp
+F90_FLAGS = -Wall -Wextra -O3 -march=native -ffast-math -ffree-line-length-none -fopenmp -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
 #LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_ilp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl
 LIBS = -L ${MKLROOT}/lib/intel64 -lmkl_rt -lpthread -lm -ldl
 
