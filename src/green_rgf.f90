@@ -195,6 +195,41 @@ subroutine energies_to_ijs(buf, tmp0, tmp1, NM, NX, NE, NK, local_Nij, local_NE,
 end subroutine energies_to_ijs
 
 
+subroutine energies_to_ijs_2(buf, tmp0, tmp1, NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size)
+  complex(8), target, intent (inout) :: buf(:), tmp0(:), tmp1(:)
+  integer(kind = 4), intent ( in ) :: NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size
+
+  complex(8), pointer :: p0(:, :, :, :, :), p1(:, :, :, :, :), p2(:, :, :, :, :), p3(:, :, :, :, :)
+  ! complex(8), pointer :: p0(:, :, :, :), p1(:, :, :, :), p2(:, :, :, :, :), p3(:, :, :, :, :)
+  integer(kind = 4) :: count, ierr, i, j, ix, ie, ik, r, src_idx, dst_idx
+
+  ! Assume (global) g(1:NM, 1:NM, 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE))
+
+  ! 1a. Interpret as g(1:NM*NM, 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE))
+  ! 1b. Interpret as g(1:local_Nij, 1:comm_size (Nij), 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE))
+  ! 1c. Transpose to g(1:local_Nij, 1:NX, 1:local_NE, 1:NK, 1:comm_size (Nij), 1:comm_size (NE))
+  p0(1:local_nij, 1:comm_size, 1:nx, 1:local_ne, 1:nk) => buf
+  p1(1:local_nij, 1:nx, 1:local_ne, 1:nk, 1:comm_size) => tmp0
+  p1 = reshape(p0, shape(p1), order = [1, 5, 2, 3, 4])
+  ! p0(1:nm*nm, 1:nx, 1:local_ne, 1:nk) => buf
+  ! p1(1:nx, 1:local_ne, 1:nk, 1:nm*nm) => tmp0
+  ! p1 = reshape(p0, shape(p1), order = [4, 1, 2, 3])
+
+  ! 2. Redistribute to g(1:local_Nij, 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE), 1:comm_size (Nij))
+  count = local_nij * nx * local_ne * nk
+  call MPI_Alltoall(tmp0, count, MPI_DOUBLE_COMPLEX, tmp1, count, MPI_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierr)
+
+  ! 3. Transpose to g(1:local_Nij, 1:NX, 1:local_NE, 1:comm_size (NE), 1:NK, 1:comm_size (Nij))
+  p2(1:local_nij, 1:nx, 1:local_ne, 1:nk, 1:comm_size) => tmp1
+  p3(1:local_ne, 1:comm_size, 1:nk, 1:nx, 1:local_nij) => buf
+  p3 = reshape(p2, shape(p3), order = [5, 4, 1, 3, 2])
+  ! p2(1:nx, 1:local_ne, 1:nk, 1:local_nij, 1:comm_size) => tmp1
+  ! p3(1:local_nij, 1:nx, 1:local_ne, 1:comm_size, 1:nk) => buf
+  ! p3 = reshape(p2, shape(p3), order = [2, 3, 5, 1, 4])
+
+end subroutine energies_to_ijs_2
+
+
 subroutine ijs_to_energies(buf, tmp0, tmp1, NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size)
   complex(8), target, intent (inout) :: buf(:), tmp0(:), tmp1(:)
   integer(kind = 4), intent ( in ) :: NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size
@@ -220,6 +255,33 @@ subroutine ijs_to_energies(buf, tmp0, tmp1, NM, NX, NE, NK, local_Nij, local_NE,
   p3 = reshape(p2, shape(p3), order = [1, 3, 4, 5, 2])
 
 end subroutine ijs_to_energies
+
+
+subroutine ijs_to_energies_2(buf, tmp0, tmp1, NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size)
+  complex(8), target, intent (inout) :: buf(:), tmp0(:), tmp1(:)
+  integer(kind = 4), intent ( in ) :: NM, NX, NE, NK, local_Nij, local_NE, first_local_Nij, first_local_NE, comm_rank, comm_size
+
+  complex(8), pointer :: p0(:, :, :, :, :), p1(:, :, :, :, :), p2(:, :, :, :, :), p3(:, :, :, :, :)
+  integer(kind = 4) :: count, ierr, i, j, ix, ie, ik, r, src_idx, dst_idx
+
+  ! Assume (global) g(1:local_Nij, 1:NX, 1:NE, 1:NK, 1:comm_size (Nij))
+
+  ! 1a. Interpret as g(1:local_Nij, 1:NX, 1:local_NE, 1:comm_size (NE), 1:NK, 1:comm_size (Nij))
+  ! 1b. Transpose to g(1:local_Nij, 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE), 1:comm_size (Nij))
+  p0(1:local_ne, 1:comm_size, 1:nk, 1:nx, 1:local_nij) => buf
+  p1(1:local_nij, 1:nx, 1:local_ne, 1:nk, 1:comm_size) => tmp0
+  p1 = reshape(p0, shape(p1), order = [3, 5, 4, 2, 1])
+
+  ! 2. Redistribute to g(1:local_Nij, 1:NX, 1:local_NE, 1:NK, 1:comm_size (Nij), 1:comm_size (NE))
+  count = local_Nij * nx * local_NE * nk
+  call MPI_Alltoall(tmp0, count, MPI_DOUBLE_COMPLEX, tmp1, count, MPI_DOUBLE_COMPLEX, MPI_COMM_WORLD, ierr)
+
+  ! 3. Transpose to g(1:local_Nij, 1:comm_size (Nij), 1:NX, 1:local_NE, 1:NK, 1:comm_size (NE))
+  p2(1:local_nij, 1:nx, 1:local_ne, 1:nk, 1:comm_size) => tmp1
+  p3(1:local_nij, 1:comm_size, 1:nx, 1:local_ne, 1:nk) => buf
+  p3 = reshape(p2, shape(p3), order = [1, 3, 4, 5, 2])
+
+end subroutine ijs_to_energies_2
 
 
 ! Redistribute g(1:NM, 1:NM, 1:NX, 1:local_NE, 1:NK) to g(1:NM, 1:NM, 1:NK, 1:NE, 1:local_NX)
@@ -1346,6 +1408,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   complex(8), pointer :: g_greater_t_buf(:), g_greater_t_by_energies(:, :, :, :, :), g_greater_t_by_blocks(:, :, :, :)
   complex(8), pointer :: g_lesser_t_buf(:), g_lesser_t_by_energies(:, :, :, :, :), g_lesser_t_by_blocks(:, :, :, :)
 
+  real :: start, finish
+
   ! For debugging/validation
   ! complex(8), pointer :: g_r_buf2(:), g_r_by_energies2(:, :, :, :, :), g_r_by_blocks2(:, :, :, :, :)
   ! complex(8), pointer :: g_greater_buf2(:), g_greater_by_energies2(:, :, :, :, :), g_greater_by_blocks2(:, :, :, :, :)
@@ -1398,9 +1462,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   g_greater_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_greater_buf
   g_lesser_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_lesser_buf
 
-  g_r_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_r_buf
-  g_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_greater_buf
-  g_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_lesser_buf
+  ! g_r_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_r_buf
+  ! g_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_greater_buf
+  ! g_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_lesser_buf
+  g_r_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_r_buf
+  g_greater_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_greater_buf
+  g_lesser_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_lesser_buf
 
   allocate(sigma_r_gw_buf(nm * nm * nx * local_NE * nk))
   allocate(sigma_greater_gw_buf(nm * nm * nx * local_NE * nk))
@@ -1422,9 +1489,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   sigma_greater_new_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => sigma_greater_new_buf
   sigma_lesser_new_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => sigma_lesser_new_buf
 
-  sigma_r_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_r_new_buf
-  sigma_greater_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_greater_new_buf
-  sigma_lesser_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_lesser_new_buf
+  ! sigma_r_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_r_new_buf
+  ! sigma_greater_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_greater_new_buf
+  ! sigma_lesser_new_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => sigma_lesser_new_buf
+  sigma_r_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_r_new_buf
+  sigma_greater_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_greater_new_buf
+  sigma_lesser_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_lesser_new_buf
 
   allocate(P_retarded_buf(nm * nm * nx * local_NE * nk))
   allocate(P_greater_buf(nm * nm * nx * local_NE * nk))
@@ -1434,9 +1504,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   P_greater_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => P_greater_buf
   P_lesser_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => P_lesser_buf
 
-  P_retarded_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_retarded_buf
-  P_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_greater_buf
-  P_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_lesser_buf
+  ! P_retarded_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_retarded_buf
+  ! P_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_greater_buf
+  ! P_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => P_lesser_buf
+  P_retarded_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => P_retarded_buf
+  P_greater_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => P_greater_buf
+  P_lesser_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => P_lesser_buf
 
   allocate(W_retarded_buf(nm * nm * nx * local_NE * nk))  
   allocate(W_greater_buf(nm * nm * nx * local_NE * nk))
@@ -1446,9 +1519,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   W_greater_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => W_greater_buf
   W_lesser_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => W_lesser_buf
 
-  W_retarded_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_retarded_buf
-  W_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_greater_buf
-  W_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_lesser_buf
+  ! W_retarded_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_retarded_buf
+  ! W_greater_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_greater_buf
+  ! W_lesser_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => W_lesser_buf
+  W_retarded_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_retarded_buf
+  W_greater_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_greater_buf
+  W_lesser_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_lesser_buf
 
   allocate(cur(nm, nm, nx, local_NE, nk))
   allocate(g_r_i1(nm,nm,nx, local_NE,nk))
@@ -1462,8 +1538,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   g_greater_t_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_greater_t_buf
   g_lesser_t_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_lesser_t_buf
 
-  g_greater_t_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_greater_t_buf
-  g_lesser_t_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_lesser_t_buf
+  ! g_greater_t_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_greater_t_buf
+  ! g_lesser_t_by_blocks(1:local_Nij, 1:NX, 1:NE, 1:nk) => g_lesser_t_buf
+  g_greater_t_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_greater_t_buf
+  g_lesser_t_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_lesser_t_buf
 
   ! For debugging/validation
   ! allocate(g_r_buf2(nm * nm * nx * local_NE * nk))
@@ -1680,11 +1758,11 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
 
     ! Redistribute G
-    call energies_to_ijs(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(g_lesser_t_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(g_greater_t_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(g_lesser_t_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(g_greater_t_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
     P_lesser_buf = dcmplx(0.0d0,0.0d0)
     P_greater_buf = dcmplx(0.0d0,0.0d0)    
@@ -1692,52 +1770,80 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
 
     nopmax=nen/2-10
 
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
+    call cpu_time(start)
+
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
     !$omp parallel default(shared) private(ix,l,h,iop,nop,ie,i,j,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd, global_ij, col, row)
     !$omp do         
-    do nop=-nopmax,nopmax
-      iop=nop+nen/2  
-      do iqy=1,nky        
-        do iqz=1,nkz
-          iq=iqz + (iqy-1)*nkz
-          do ix=1,nx
-            do i = 1, local_Nij
-              ! global_ij = i + first_local_ij - 1
-              ! col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
-              ! row = mod(global_ij - 1, nm) + 1  ! convert to 0-based indexing, mod, and convert back to 1-based indexing
-              ! l = max(row - ndiag, 1)
-              ! h = min(nm, row + ndiag)
-              ! if (col < l .or. col > h) then
-              !   continue
-              ! endif
+    ! do nop=-nopmax,nopmax
+    !   iop=nop+nen/2  
+    !   do iqy=1,nky        
+    !     do iqz=1,nkz
+    !       iq=iqz + (iqy-1)*nkz
+    !       do ix=1,nx
+    !         do i = 1, local_Nij
+    !           ! global_ij = i + first_local_ij - 1
+    !           ! col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
+    !           ! row = mod(global_ij - 1, nm) + 1  ! convert to 0-based indexing, mod, and convert back to 1-based indexing
+    !           ! l = max(row - ndiag, 1)
+    !           ! h = min(nm, row + ndiag)
+    !           ! if (col < l .or. col > h) then
+    !           !   continue
+    !           ! endif
               
-            ! do i=1,nm      
-            !   l=max(i-ndiag,1)
-            !   h=min(nm,i+ndiag)   
-              do iky=1,nky
-                do ikz=1,nkz              
-                  ik=ikz + (iky-1)*nkz
-                  ikzd=ikz-iqz + nkz/2
-                  ikyd=iky-iqy + nky/2
-                  if (ikzd<1)   ikzd=ikzd+nkz
-                  if (ikzd>nkz) ikzd=ikzd-nkz
-                  if (ikyd<1)   ikyd=ikyd+nky
-                  if (ikyd>nky) ikyd=ikyd-nky                
-                  if (nky==1)   ikyd=1
-                  if (nkz==1)   ikzd=1
-                  ikd=ikzd + (ikyd-1)*nkz
+    !         ! do i=1,nm      
+    !         !   l=max(i-ndiag,1)
+    !         !   h=min(nm,i+ndiag)   
+    !           do iky=1,nky
+    !             do ikz=1,nkz              
+    !               ik=ikz + (iky-1)*nkz
+    !               ikzd=ikz-iqz + nkz/2
+    !               ikyd=iky-iqy + nky/2
+    !               if (ikzd<1)   ikzd=ikzd+nkz
+    !               if (ikzd>nkz) ikzd=ikzd-nkz
+    !               if (ikyd<1)   ikyd=ikyd+nky
+    !               if (ikyd>nky) ikyd=ikyd-nky                
+    !               if (nky==1)   ikyd=1
+    !               if (nkz==1)   ikzd=1
+    !               ikd=ikzd + (ikyd-1)*nkz
+    !               do ie = max(nop+1,1),min(nen,nen+nop)
+    do i = 1, local_Nij
+      do ix = 1, nx
+        do iqy=1,nky        
+          do iqz=1,nkz
+            iq=iqz + (iqy-1)*nkz
+            do iky=1,nky
+              do ikz=1,nkz              
+                ik=ikz + (iky-1)*nkz
+                ikzd=ikz-iqz + nkz/2
+                ikyd=iky-iqy + nky/2
+                if (ikzd<1)   ikzd=ikzd+nkz
+                if (ikzd>nkz) ikzd=ikzd-nkz
+                if (ikyd<1)   ikyd=ikyd+nky
+                if (ikyd>nky) ikyd=ikyd-nky                
+                if (nky==1)   ikyd=1
+                if (nkz==1)   ikzd=1
+                ikd=ikzd + (ikyd-1)*nkz
+                do nop=-nopmax,nopmax
+                  iop=nop+nen/2  
                   do ie = max(nop+1,1),min(nen,nen+nop)
-
                     ! P_lesser_by_blocks(i,l:h,ix,iop,iq) = P_lesser_by_blocks(i,l:h,ix,iop,iq) + G_lesser_by_blocks(i,l:h,ix,ie,ik) * G_greater_by_blocks(l:h,i,ix,ie-nop,ikd)
                     ! P_greater_by_blocks(i,l:h,ix,iop,iq) = P_greater_by_blocks(i,l:h,ix,iop,iq) + G_greater_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd)        
                     ! P_retarded_by_blocks(i,l:h,ix,iop,iq) = P_retarded_by_blocks(i,l:h,ix,iop,iq) + (G_lesser_by_blocks(i,l:h,ix,ie,ik) * conjg(G_r_by_blocks(i,l:h,ix,ie-nop,ikd)) & 
                     !                           & + G_r_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd))
                     
-                    P_lesser_by_blocks(i,ix,iop,iq) = P_lesser_by_blocks(i,ix,iop,iq) + G_lesser_by_blocks(i,ix,ie,ik) * G_greater_t_by_blocks(i,ix,ie-nop,ikd)
-                    P_greater_by_blocks(i,ix,iop,iq) = P_greater_by_blocks(i,ix,iop,iq) + G_greater_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd)        
-                    P_retarded_by_blocks(i,ix,iop,iq) = P_retarded_by_blocks(i,ix,iop,iq) + (G_lesser_by_blocks(i,ix,ie,ik) * conjg(G_r_by_blocks(i, ix,ie-nop,ikd)) & 
-                                              & + G_r_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd))  
+                    ! P_lesser_by_blocks(i,ix,iop,iq) = P_lesser_by_blocks(i,ix,iop,iq) + G_lesser_by_blocks(i,ix,ie,ik) * G_greater_t_by_blocks(i,ix,ie-nop,ikd)
+                    ! P_greater_by_blocks(i,ix,iop,iq) = P_greater_by_blocks(i,ix,iop,iq) + G_greater_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd)        
+                    ! P_retarded_by_blocks(i,ix,iop,iq) = P_retarded_by_blocks(i,ix,iop,iq) + (G_lesser_by_blocks(i,ix,ie,ik) * conjg(G_r_by_blocks(i, ix,ie-nop,ikd)) & 
+                    !                           & + G_r_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd))
+
+                    P_lesser_by_blocks(iop, iq, ix, i) = P_lesser_by_blocks(iop, iq, ix, i) + G_lesser_by_blocks(ie, ik, ix, i) * G_greater_t_by_blocks(ie-nop, ikd, ix, i)
+                    P_greater_by_blocks(iop, iq, ix, i) = P_greater_by_blocks(iop, iq, ix, i) + G_greater_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i)        
+                    P_retarded_by_blocks(iop, iq, ix, i) = P_retarded_by_blocks(iop, iq, ix, i) + (G_lesser_by_blocks(ie, ik, ix, i) * conjg(G_r_by_blocks(ie-nop, ikd, ix, i)) & 
+                                              & + G_r_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i))  
                     
                   enddo
                 enddo
@@ -1750,15 +1856,21 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     !$omp end do 
     !$omp end parallel
 
+    call cpu_time(finish)
+    ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
+    print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
     dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg /dble(nk)
     P_lesser_buf = P_lesser_buf * dE
     P_greater_buf = P_greater_buf * dE
     P_retarded_buf = P_retarded_buf * dE
 
     ! Redistribute P
-    call ijs_to_energies(P_retarded_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call ijs_to_energies(P_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call ijs_to_energies(P_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(P_retarded_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(P_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(P_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
     ! Zero-out off diagonals
     !$omp parallel default(shared) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
@@ -1964,67 +2076,107 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       print *, 'calc SigGW'
     endif
 
-    call energies_to_ijs(W_retarded_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(W_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call energies_to_ijs(W_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(W_retarded_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(W_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call energies_to_ijs_2(W_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
     nopmax=nen/2-10
 
     Sigma_greater_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_lesser_new_buf = dcmplx(0.0d0,0.0d0)
-    Sigma_r_new_buf = dcmplx(0.0d0,0.0d0)    
+    Sigma_r_new_buf = dcmplx(0.0d0,0.0d0)
+    
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
+    call cpu_time(start)
+  
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
     !$omp parallel default(shared) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
     !$omp do    
-    do ie=1,nen      
-      do iky=1,nky
-        do ikz=1,nkz
-          do nop= -nopmax,nopmax    
-            if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then   
-              ik=ikz+(iky-1)*nkz
-              do iqy=1,nky
-                do iqz=1,nkz              
-                  iq=iqz + (iqy-1)*nkz
-                  iop=nop+nen/2                
-                  ikzd=ikz-iqz + nkz/2
-                  ikyd=iky-iqy + nky/2            
-                  if (ikzd<1)   ikzd=ikzd+nkz
-                  if (ikzd>nkz) ikzd=ikzd-nkz
-                  if (ikyd<1)   ikyd=ikyd+nky
-                  if (ikyd>nky) ikyd=ikyd-nky        
-                  if (nky==1)   ikyd=1
-                  if (nkz==1)   ikzd=1        
-                  ikd=ikzd + (ikyd-1)*nkz
-                  do ix=1,nx
-                    do i = 1, local_Nij
+    ! do ie=1,nen      
+    !   do iky=1,nky
+    !     do ikz=1,nkz
+    !       do nop= -nopmax,nopmax    
+    !         if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then   
+    !           ik=ikz+(iky-1)*nkz
+    !           do iqy=1,nky
+    !             do iqz=1,nkz              
+    !               iq=iqz + (iqy-1)*nkz
+    !               iop=nop+nen/2                
+    !               ikzd=ikz-iqz + nkz/2
+    !               ikyd=iky-iqy + nky/2            
+    !               if (ikzd<1)   ikzd=ikzd+nkz
+    !               if (ikzd>nkz) ikzd=ikzd-nkz
+    !               if (ikyd<1)   ikyd=ikyd+nky
+    !               if (ikyd>nky) ikyd=ikyd-nky        
+    !               if (nky==1)   ikyd=1
+    !               if (nkz==1)   ikzd=1        
+    !               ikd=ikzd + (ikyd-1)*nkz
+    !               do ix=1,nx
+    !                 do i = 1, local_Nij
+    do i = 1, local_Nij
+      do ix=1,nx     
+        do iky=1,nky
+          do ikz=1,nkz   
+            ik=ikz+(iky-1)*nkz
+            do iqy=1,nky
+              do iqz=1,nkz              
+                iq=iqz + (iqy-1)*nkz
+                ! iop=nop+nen/2                
+                ikzd=ikz-iqz + nkz/2
+                ikyd=iky-iqy + nky/2            
+                if (ikzd<1)   ikzd=ikzd+nkz
+                if (ikzd>nkz) ikzd=ikzd-nkz
+                if (ikyd<1)   ikyd=ikyd+nky
+                if (ikyd>nky) ikyd=ikyd-nky        
+                if (nky==1)   ikyd=1
+                if (nkz==1)   ikzd=1        
+                ikd=ikzd + (ikyd-1)*nkz
+                do nop= -nopmax,nopmax
+                  iop=nop+nen/2
+                  do ie=1,nen     
+                    if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then
                     ! do i=1,nm
                     !   l=max(i-ndiag,1)
                     !   h=min(nm,i+ndiag)                                                
-                      sigma_lesser_new_by_blocks(i,ix,ie,ik)=Sigma_lesser_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq)
-                      Sigma_greater_new_by_blocks(i,ix,ie,ik)=Sigma_greater_new_by_blocks(i,ix,ie,ik)+G_greater_by_blocks(i,ix,ie-nop,ikd)*W_greater_by_blocks(i,ix,iop,iq)
-                      Sigma_r_new_by_blocks(i,ix,ie,ik)=Sigma_r_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq) &
-                                                          &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq) &
-                                                          &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq)    
-                     enddo
+                      ! sigma_lesser_new_by_blocks(i,ix,ie,ik)=Sigma_lesser_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq)
+                      ! Sigma_greater_new_by_blocks(i,ix,ie,ik)=Sigma_greater_new_by_blocks(i,ix,ie,ik)+G_greater_by_blocks(i,ix,ie-nop,ikd)*W_greater_by_blocks(i,ix,iop,iq)
+                      ! Sigma_r_new_by_blocks(i,ix,ie,ik)=Sigma_r_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq) &
+                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq) &
+                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq)  
+                      
+                      sigma_lesser_new_by_blocks(ie, ik, ix, i)=Sigma_lesser_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i)
+                      Sigma_greater_new_by_blocks(ie, ik, ix, i)=Sigma_greater_new_by_blocks(ie, ik, ix, i)+G_greater_by_blocks(ie-nop, ikd, ix, i)*W_greater_by_blocks(iop, iq, ix, i)
+                      Sigma_r_new_by_blocks(ie, ik, ix, i)=Sigma_r_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i) &
+                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i) &
+                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i)  
+                    endif
                   enddo
                 enddo
               enddo
-            endif            
+            enddo            
           enddo
         enddo
       enddo      
     enddo
     !$omp end do
     !$omp end parallel
+
+    call cpu_time(finish)
+    ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
+    print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+
     dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi) /dble(nk) 
     Sigma_lesser_new_buf = Sigma_lesser_new_buf  * dE
     Sigma_greater_new_buf = Sigma_greater_new_buf * dE
     Sigma_r_new_buf = Sigma_r_new_buf * dE
     Sigma_r_new_buf = dcmplx( dble(Sigma_r_new_buf), aimag(Sigma_greater_new_buf-Sigma_lesser_new_buf)/2.0d0 )
 
-    call ijs_to_energies(sigma_r_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call ijs_to_energies(sigma_lesser_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-    call ijs_to_energies(sigma_greater_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(sigma_r_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(sigma_lesser_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(sigma_greater_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
     ! Zero-out off diagonals
     !$omp parallel default(shared) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
@@ -2103,9 +2255,9 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       ! call energies_to_ijs(sigma_lesser_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
       ! call energies_to_ijs(sigma_greater_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
-      ! call ijs_to_energies(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-      call ijs_to_energies(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-      call ijs_to_energies(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+      ! call ijs_to_energies_2(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+      call ijs_to_energies_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+      call ijs_to_energies_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
       if (comm_rank - 1 >= 0) then
         call MPI_Isend(g_lesser_buf(nm*nm*nx*nopphot*nk:2*nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank-1, 0, MPI_COMM_WORLD, reqs(1), ierr)
