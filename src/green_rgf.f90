@@ -1775,9 +1775,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     call cpu_time(start)
 
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
-    ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
-    !$omp parallel default(shared) private(ix,l,h,iop,nop,ie,i,j,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd, global_ij, col, row)
-    !$omp do         
+    ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)         
     ! do nop=-nopmax,nopmax
     !   iop=nop+nen/2  
     !   do iqy=1,nky        
@@ -1817,6 +1815,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       l = max(row - ndiag, 1)
       h = min(nm, row + ndiag)
       if (col >= l .and. col <= h) then
+      !$omp parallel default(shared) private(ix,iop,nop,ie,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
+      !$omp do
       do ix = 1, nx
         do iqy=1,nky        
           do iqz=1,nkz
@@ -1858,10 +1858,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
           enddo
         enddo
       enddo
+      !$omp end do 
+      !$omp end parallel
     endif     
     enddo          
-    !$omp end do 
-    !$omp end parallel
 
     call cpu_time(finish)
     ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
@@ -2097,9 +2097,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
 
     call cpu_time(start)
   
-    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)    
-    !$omp parallel default(shared) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
-    !$omp do    
+    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)      
     ! do ie=1,nen      
     !   do iky=1,nky
     !     do ikz=1,nkz
@@ -2128,6 +2126,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       l = max(row - ndiag, 1)
       h = min(nm, row + ndiag)
       if (col >= l .and. col <= h) then
+      !$omp parallel default(shared) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
+      !$omp do  
       do ix=1,nx     
         do iky=1,nky
           do ikz=1,nkz   
@@ -2171,10 +2171,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
           enddo
         enddo
       enddo
+      !$omp end do
+      !$omp end parallel
     endif      
     enddo
-    !$omp end do
-    !$omp end parallel
 
     call cpu_time(finish)
     ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
