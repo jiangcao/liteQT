@@ -1811,6 +1811,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     !               ikd=ikzd + (ikyd-1)*nkz
     !               do ie = max(nop+1,1),min(nen,nen+nop)
     do i = 1, local_Nij
+      global_ij = i + first_local_ij - 1
+      col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
+      row = mod(global_ij - 1, nm) + 1  ! convert to 0-based indexing, mod, and convert back to 1-based indexing
+      l = max(row - ndiag, 1)
+      h = min(nm, row + ndiag)
+      if (col >= l .and. col <= h) then
       do ix = 1, nx
         do iqy=1,nky        
           do iqz=1,nkz
@@ -1851,7 +1857,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
             enddo
           enddo
         enddo
-      enddo      
+      enddo
+    endif     
     enddo          
     !$omp end do 
     !$omp end parallel
@@ -2115,6 +2122,12 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     !               do ix=1,nx
     !                 do i = 1, local_Nij
     do i = 1, local_Nij
+      global_ij = i + first_local_ij - 1
+      col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
+      row = mod(global_ij - 1, nm) + 1  ! convert to 0-based indexing, mod, and convert back to 1-based indexing
+      l = max(row - ndiag, 1)
+      h = min(nm, row + ndiag)
+      if (col >= l .and. col <= h) then
       do ix=1,nx     
         do iky=1,nky
           do ikz=1,nkz   
@@ -2157,7 +2170,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
             enddo            
           enddo
         enddo
-      enddo      
+      enddo
+    endif      
     enddo
     !$omp end do
     !$omp end parallel
