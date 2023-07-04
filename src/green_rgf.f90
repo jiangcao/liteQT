@@ -514,15 +514,19 @@ subroutine calc_sigma_ephoton_monochromatic_ext(nm,length,nen,En,nop,Mii,G_lesse
       do ix=1,length
         ! Sig^<(E)
         A = czero
-        if (ie-nop>=1) A =A+ G_lesser(:,:,ix,ie2-nop)
-        if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie2+nop)
+        ! if (ie-nop>=1) A =A+ G_lesser(:,:,ix,ie2-nop)
+        ! if (ie+nop<=nen) A =A+ G_lesser(:,:,ix,ie2+nop)
+        A =A+ G_lesser(:,:,ix,ie2-nop)
+        A =A+ G_lesser(:,:,ix,ie2+nop)
         call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
         call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
         Sig_lesser(:,:,ix,ie) = A 
         ! Sig^>(E)
         A = czero
-        if (ie-nop>=1) A =A+ G_greater(:,:,ix,ie2-nop)
-        if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie2+nop)
+        ! if (ie-nop>=1) A =A+ G_greater(:,:,ix,ie2-nop)
+        ! if (ie+nop<=nen) A =A+ G_greater(:,:,ix,ie2+nop)
+        A =A+ G_greater(:,:,ix,ie2-nop)
+        A =A+ G_greater(:,:,ix,ie2+nop)
         call zgemm('n','n',nm,nm,nm,cone,Mii(:,:,ix),nm,A,nm,czero,B,nm) 
         call zgemm('n','n',nm,nm,nm,cone,B,nm,Mii(:,:,ix),nm,czero,A,nm)     
         Sig_greater(:,:,ix,ie) = A
@@ -1408,7 +1412,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   complex(8), pointer :: g_greater_t_buf(:), g_greater_t_by_energies(:, :, :, :, :), g_greater_t_by_blocks(:, :, :, :)
   complex(8), pointer :: g_lesser_t_buf(:), g_lesser_t_by_energies(:, :, :, :, :), g_lesser_t_by_blocks(:, :, :, :)
 
-  real :: start, finish
+  complex(8), pointer :: g_lesser_photon_left_send(:), g_lesser_photon_left_recv(:)
+  complex(8), pointer :: g_lesser_photon_right_send(:), g_lesser_photon_right_recv(:)
+  complex(8), pointer :: g_greater_photon_left_send(:), g_greater_photon_left_recv(:)
+  complex(8), pointer :: g_greater_photon_right_send(:), g_greater_photon_right_recv(:)
+
+  complex(8), pointer :: g_lesser_photon_buf(:), g_greater_photon_buf(:)
+  complex(8), pointer :: g_lesser_photon(:, :, :, :), g_greater_photon(:, :, :, :)
+
+  real(8) :: start, finish
+
+  real(8), allocatable :: extended_local_energies(:)
 
   ! For debugging/validation
   ! complex(8), pointer :: g_r_buf2(:), g_r_by_energies2(:, :, :, :, :), g_r_by_blocks2(:, :, :, :, :)
@@ -1444,19 +1458,55 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   ne = nen
   nopphot=floor(hw / (En(2)-En(1)))
 
-  allocate(g_r_buf(nm * nm * local_NE * nk * nx))
-  ! allocate(g_greater_buf(nm * nm * nx * local_NE * nk))
-  ! allocate(g_lesser_buf(nm * nm * nx * local_NE * nk))
-  allocate(g_greater_extended_buf(nm * nm * nx * (local_NE + 2 * nopphot) * nk))
-  allocate(g_lesser_extended_buf(nm * nm * nx * (local_NE + 2 * nopphot) * nk))
-  count = nm * nm * nx * nopphot * nk
-  g_greater_buf(1:nm * nm * local_NE * nk * nx) => g_greater_extended_buf(count:count + nm * nm * local_NE * nk * nx - 1)
-  g_lesser_buf(1:nm * nm * local_NE * nk * nx) => g_lesser_extended_buf(count:count + nm * nm * local_NE * nk * nx - 1)
+  ! real(8) :: extended_local_energies(local_NE + 2 * nopphot)
+  allocate(extended_local_energies(local_NE + 2 * nopphot))
 
-  g_lesser_extended_buf = dcmplx(0.0d0,0.0d0)
-  g_greater_extended_buf = dcmplx(0.0d0,0.0d0)
-  g_lesser_extended(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot, 1:nk) => g_lesser_extended_buf
-  g_greater_extended(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot, 1:nk) => g_greater_extended_buf
+  do ie = 1, local_NE
+    local_energies(ie) = en(ie + first_local_energy - 1)
+  enddo
+  extended_local_energies = 0.0d0
+  extended_local_energies(nopphot + 1:nopphot + local_NE) = local_energies(:)
+  if (comm_rank - 1 >= 0) then
+    do ie = 1, nopphot
+      extended_local_energies(ie) = en(ie + first_local_energy - nopphot - 1)
+    enddo
+  endif
+  if (comm_rank +1 < comm_size) then
+    ! do ie = nopphot + local_NE + 1, local_NE + 2 * nopphot
+    do ie = 1, nopphot
+      extended_local_energies(ie + nopphot + local_NE) = en(local_NE + first_local_energy + ie - 1)
+    enddo
+  endif
+
+  allocate(g_r_buf(nm * nm * local_NE * nk * nx))
+  allocate(g_greater_buf(nm * nm * nx * local_NE * nk))
+  allocate(g_lesser_buf(nm * nm * nx * local_NE * nk))
+  ! allocate(g_greater_extended_buf(nm * nm * nx * (local_NE + 2 * nopphot) * nk))
+  ! allocate(g_lesser_extended_buf(nm * nm * nx * (local_NE + 2 * nopphot) * nk))
+  ! count = nm * nm * nx * nopphot * nk
+  ! g_greater_buf(1:nm * nm * local_NE * nk * nx) => g_greater_extended_buf(count:count + nm * nm * local_NE * nk * nx - 1)
+  ! g_lesser_buf(1:nm * nm * local_NE * nk * nx) => g_lesser_extended_buf(count:count + nm * nm * local_NE * nk * nx - 1)
+
+  ! For photon computation/communication
+  allocate(g_lesser_photon_buf(nm * nm * nx * (local_NE + 2 * nopphot)))
+  allocate(g_greater_photon_buf(nm * nm * nx * (local_NE + 2 * nopphot)))
+  g_lesser_photon_buf = dcmplx(0.0d0, 0.0d0)
+  g_greater_photon_buf = dcmplx(0.0d0, 0.0d0)
+  g_lesser_photon(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot) => g_lesser_photon_buf
+  g_greater_photon(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot) => g_greater_photon_buf
+  g_lesser_photon_left_send(1:nm * nm * nx* nopphot) => g_lesser_photon_buf(nm * nm * nx * nopphot + 1 : nm * nm * nx * 2 * nopphot)
+  g_lesser_photon_left_recv(1:nm * nm * nx* nopphot) => g_lesser_photon_buf(1 : nm * nm * nx * nopphot)
+  g_lesser_photon_right_send(1:nm * nm * nx* nopphot) => g_lesser_photon_buf(nm * nm * nx * local_NE + 1 : nm * nm * nx * (local_NE + nopphot))
+  g_lesser_photon_right_recv(1:nm * nm * nx* nopphot) => g_lesser_photon_buf(nm * nm * nx * (local_NE + nopphot) + 1 : nm * nm * nx * (local_NE + 2 * nopphot))
+  g_greater_photon_left_send(1:nm * nm * nx* nopphot) => g_greater_photon_buf(nm * nm * nx * nopphot + 1 : nm * nm * nx * 2 * nopphot)
+  g_greater_photon_left_recv(1:nm * nm * nx* nopphot) => g_greater_photon_buf(1 : nm * nm * nx * nopphot)
+  g_greater_photon_right_send(1:nm * nm * nx* nopphot) => g_greater_photon_buf(nm * nm * nx * local_NE + 1 : nm * nm * nx * (local_NE + nopphot))
+  g_greater_photon_right_recv(1:nm * nm * nx* nopphot) => g_greater_photon_buf(nm * nm * nx * (local_NE + nopphot) + 1 : nm * nm * nx * (local_NE + 2 * nopphot))
+
+  ! g_lesser_extended_buf = dcmplx(0.0d0,0.0d0)
+  ! g_greater_extended_buf = dcmplx(0.0d0,0.0d0)
+  ! g_lesser_extended(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot, 1:nk) => g_lesser_extended_buf
+  ! g_greater_extended(1:nm, 1:nm, 1:nx, 1:local_NE + 2 * nopphot, 1:nk) => g_greater_extended_buf
 
   g_r_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_r_buf
   g_greater_by_energies(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_greater_buf
@@ -1662,100 +1712,26 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     g_lesser_buf = dcmplx( 0.0d0*dble(g_lesser_buf), aimag(g_lesser_buf))
     g_greater_buf = dcmplx( 0.0d0*dble(g_greater_buf), aimag(g_greater_buf))
 
+    do i = 0, comm_size - 1
+      if (i == comm_rank) then
+        filename = 'gw_GL'
+        call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+        filename = 'gw_GG'   
+        call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+      endif
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    enddo
+
     g_greater_t_by_energies = reshape(g_greater_by_energies, shape(g_greater_t_by_energies), order=[2, 1, 3, 4, 5])
     g_lesser_t_by_energies = reshape(g_lesser_by_energies, shape(g_lesser_t_by_energies), order=[2, 1, 3, 4, 5])
 
-    ! !!!! G Validation !!!!
-
-    ! g_r_buf2 = g_r_buf
-    ! g_lesser_buf2 = g_lesser_buf
-    ! g_greater_buf2 = g_greater_buf
-
-    ! ! Redistribute G
-    ! call energies_to_blocks(g_r_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call energies_to_blocks(g_lesser_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call energies_to_blocks(g_greater_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-
-    ! ! do ik = 1, nk
-    ! !   do nop = first_local_energy, first_local_energy + local_NE - 1
-    ! !     ie = nop - first_local_energy + 1
-    ! !     do ix = 1, nx
-    ! !       do ij = 1, local_Nij
-    ! !         global_ij = ij + first_local_ij - 1
-    ! !         col = (global_ij - 1) / nm + 1
-    ! !         row = mod(global_ij - 1, nm) + 1
-    ! !         if (abs(g_r_by_blocks(ij,ix,nop,ik) - g_r_by_energies(row,col,ix,ie,ik)) > 1.0d-10) then
-    ! !           print *, comm_rank, ': (', global_ij, ' (', row, col, ') ', ix, nop, ' (', ie, ') ', ik, '): ', g_r_by_blocks(ij,ix,nop,ik), g_r_by_energies(row,col,ix,ie,ik)
-    ! !           return
-    ! !         endif 
-    ! !       enddo
-    ! !     enddo
-    ! !   enddo
-    ! ! enddo
-
-    ! ! if (comm_rank == 1) then
-    ! !   ik = 1
-    ! !   nop = first_local_energy
-    ! !   ix = 1
-    ! !   j = 1
-    ! !   do i = 1, 10
-    ! !     print *, g_r_by_energies(i, j, ix, 1, ik)
-    ! !     print *, g_r_by_blocks(i, ix, nop, ik)
-    ! !   enddo
-    ! !   print *
-    ! !   do i = 1, 10
-    ! !     global_ij = i + first_local_ij - 1
-    ! !     col = (global_ij - 1) / nm + 1
-    ! !     row = mod(global_ij - 1, nm) + 1
-    ! !     print *, g_r_by_energies(row, col, ix, 1, ik)
-    ! !     print *, g_r_by_blocks(i, ix, nop, ik)
-    ! !   enddo
-    ! ! endif
-
-    ! ! Redistribute G
-    ! call blocks_to_energies(g_r_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call blocks_to_energies(g_lesser_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call blocks_to_energies(g_greater_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-
-    ! do ik = 1, nk
-    !   do ie = 1, local_NE
-    !     do ix = 1, nx
-    !       do j = 1, nm
-    !         do i = 1, nm
-    !           if (abs(g_r_by_energies2(i,j,ix,ie,ik) - g_r_by_energies(i,j,ix,ie,ik)) > 1.0d-10) then
-    !             print *, comm_rank, ': (', i, j, ix, ie, ik, '): ', g_r_by_energies2(i,j,ix,ie,ik), g_r_by_energies(i,j,ix,ie,ik)
-    !             return
-    !           endif 
-    !         enddo
-    !       enddo
-    !     enddo
-    !   enddo
-    ! enddo
-
-    ! print *, comm_rank, ': G forth and back is correct.'
-
-    ! do ik = 1, nk
-    !   do ie = 1, local_NE
-    !     do ix = 1, nx
-    !       do j = 1, nm
-    !         do i = 1, nm
-    !           if (abs(g_greater_t_by_energies(i,j,ix,ie,ik) - g_greater_by_energies(j,i,ix,ie,ik)) > 1.0d-10) then
-    !             print *, comm_rank, ': (', i, j, ix, ie, ik, '): ', g_greater_t_by_energies(i,j,ix,ie,ik), g_greater_by_energies(j, i,ix,ie,ik)
-    !             return
-    !           endif 
-    !         enddo
-    !       enddo
-    !     enddo
-    !   enddo
-    ! enddo
-
-    ! print *, comm_rank, ': G transpose is correct.'
-
-    ! !!!!!!!!!!!!!!!!!
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
     if (comm_rank == 0) then     
       print *, 'calc P'
     endif
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
     ! Redistribute G
     call energies_to_ijs_2(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
@@ -1770,9 +1746,13 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
 
     nopmax=nen/2-10
 
+    if (comm_rank == 0) then     
+      print *, 'Redistributed G'
+    endif
+
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
-    call cpu_time(start)
+    call omp_get_wtime(start)
 
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)         
@@ -1863,7 +1843,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif     
     enddo          
 
-    call cpu_time(finish)
+    call omp_get_wtime(finish)
     ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
     print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
 
@@ -2095,7 +2075,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
-    call cpu_time(start)
+    call omp_get_wtime(start)
   
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)      
     ! do ie=1,nen      
@@ -2126,7 +2106,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       l = max(row - ndiag, 1)
       h = min(nm, row + ndiag)
       if (col >= l .and. col <= h) then
-      !$omp parallel default(shared) private(io,ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
+      !$omp parallel default(shared) private(ix,iop,nop,ie,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
       !$omp do  
       do ix=1,nx     
         do iky=1,nky
@@ -2176,7 +2156,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif      
     enddo
 
-    call cpu_time(finish)
+    call omp_get_wtime(finish)
     ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
     print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
 
@@ -2273,33 +2253,64 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       call ijs_to_energies_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
       call ijs_to_energies_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
-      if (comm_rank - 1 >= 0) then
-        call MPI_Isend(g_lesser_buf(nm*nm*nx*nopphot*nk:2*nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank-1, 0, MPI_COMM_WORLD, reqs(1), ierr)
-        call MPI_Irecv(g_lesser_buf, nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank-1, 1, MPI_COMM_WORLD, reqs(2), ierr)
-        call MPI_Isend(g_greater_buf(nm*nm*nx*nopphot*nk:2*nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank-1, 2, MPI_COMM_WORLD, reqs(3), ierr)
-        call MPI_Irecv(g_greater_buf, nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank-1, 3, MPI_COMM_WORLD, reqs(4), ierr)
-      endif
-      if (comm_rank + 1 < comm_size) then
-        call MPI_Isend(g_greater_buf(nm*nm*nx*local_NE*nk:nm*nm*nx*local_NE*nk+nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank+1, 1, MPI_COMM_WORLD, reqs(5), ierr)
-        call MPI_Irecv(g_greater_buf(nm*nm*nx*(local_NE+nopphot)*nk:nm*nm*nx*(local_NE+nopphot)*nk+nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank+1, 0, MPI_COMM_WORLD, reqs(6), ierr)
-        call MPI_Isend(g_greater_buf(nm*nm*nx*local_NE*nk:nm*nm*nx*local_NE*nk+nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank+1, 3, MPI_COMM_WORLD, reqs(7), ierr)
-        call MPI_Irecv(g_greater_buf(nm*nm*nx*(local_NE+nopphot)*nk:nm*nm*nx*(local_NE+nopphot)*nk+nm*nm*nx*nopphot*nk-1), nm*nm*nx*nopphot*nk, MPI_DOUBLE_COMPLEX, comm_rank+1, 2, MPI_COMM_WORLD, reqs(8), ierr)
-      endif
+      do ik=1, nk
 
-      if (comm_rank - 1 >= 0) then
-        call MPI_Waitall(4, reqs(1:4), stats(1:4), ierr)
-      endif
-      if (comm_rank +1 < comm_size) then
-        call MPI_Waitall(4, reqs(5:8), stats(5:8), ierr)
-      endif
+        write (rank_str, fmt) ik
 
-      do ik=1,nk
         if (comm_rank == 0) then
           print *, ' ik=', ik,'/',nk
         endif
+
+        do i = 0, comm_size - 1
+          if (i == comm_rank) then
+            filename = 'gw_GL_ik' // rank_str // '_'
+            call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+            filename = 'gw_GG_ik' // rank_str // '_'  
+            call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+          endif
+          call MPI_Barrier(MPI_COMM_WORLD, ierr)
+        enddo
+
+        ! Copy local_NE energies to the buffers
+        g_lesser_photon_buf = dcmplx(0.0d0,0.0d0)
+        g_greater_photon_buf = dcmplx(0.0d0,0.0d0)
+        g_lesser_photon(:, :, :, nopphot + 1 : nopphot + local_NE) = g_lesser_by_energies(:, :, :, :, ik)
+        g_greater_photon(:, :, :, nopphot + 1 : nopphot + local_NE) = g_greater_by_energies(:, :, :, :, ik)
+
+        ! Communicate up to 2*nopphot energies to the left and right
+        if (comm_rank - 1 >= 0) then
+          call MPI_Isend(g_lesser_photon_left_send, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank-1, 0, MPI_COMM_WORLD, reqs(1), ierr)
+          call MPI_Irecv(g_lesser_photon_left_recv, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank-1, 1, MPI_COMM_WORLD, reqs(2), ierr)
+          call MPI_Isend(g_greater_photon_left_send, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank-1, 2, MPI_COMM_WORLD, reqs(3), ierr)
+          call MPI_Irecv(g_greater_photon_left_recv, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank-1, 3, MPI_COMM_WORLD, reqs(4), ierr)
+        endif
+        if (comm_rank + 1 < comm_size) then
+          call MPI_Isend(g_lesser_photon_right_send, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank+1, 1, MPI_COMM_WORLD, reqs(5), ierr)
+          call MPI_Irecv(g_lesser_photon_right_recv, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank+1, 0, MPI_COMM_WORLD, reqs(6), ierr)
+          call MPI_Isend(g_greater_photon_right_send, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank+1, 3, MPI_COMM_WORLD, reqs(7), ierr)
+          call MPI_Irecv(g_greater_photon_right_recv, nm*nm*nx*nopphot, MPI_DOUBLE_COMPLEX, comm_rank+1, 2, MPI_COMM_WORLD, reqs(8), ierr)
+        endif
+  
+        if (comm_rank - 1 >= 0) then
+          call MPI_Waitall(4, reqs(1:4), MPI_STATUSES_IGNORE, ierr)
+        endif
+        if (comm_rank +1 < comm_size) then
+          call MPI_Waitall(4, reqs(5:8), MPI_STATUSES_IGNORE, ierr)
+        endif
+
+        do i = 0, comm_size - 1
+          if (i == comm_rank) then
+            filename = 'gw_GL_ext_ik' // rank_str // '_'
+            call write_spectrum_summed_over_k(filename,iter,g_lesser_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+            filename = 'gw_GG_ext_ik' // rank_str // '_'   
+            call write_spectrum_summed_over_k(filename,iter,g_greater_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+          endif
+          call MPI_Barrier(MPI_COMM_WORLD, ierr)
+        enddo
+
         call calc_sigma_ephoton_monochromatic_ext( &
-          nm, NX, local_NE, En, nopphot, Mii(:,:,ik,:), &
-          g_lesser_extended(:,:,:,:,ik), g_greater_extended(:,:,:,:,ik), &
+          nm, NX, local_NE, En, nopphot, Mii(:,:,:,ik), &
+          g_lesser_photon(:,:,:,:), g_greater_photon(:,:,:,:), &
           Sigma_r_new_by_energies(:,:,:,:,ik), Sigma_lesser_new_by_energies(:,:,:,:,ik), Sigma_greater_new_by_energies(:,:,:,:,ik), &
           pre_fact, intensity, hw)
       enddo
@@ -2359,6 +2370,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   deallocate(P_retarded_buf, P_lesser_buf, P_greater_buf)
   deallocate(W_retarded_buf, W_lesser_buf, W_greater_buf)
   deallocate(Mii)
+  deallocate(extended_local_energies)
 end subroutine green_rgf_solve_gw_ephoton_3d_ijs
 
 
