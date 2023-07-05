@@ -1,26 +1,30 @@
-4         !ns
-10         !width
+3         !num cell in sancho
+1         !width
 200        !nkx
-1         ! num B 
-0.0           !B values
+1         ! num B field
+0.0           !B field values
 1   ! axis of ribbon length 
-28  ! num CPU
+8  ! num CPU
 F   ! reorder axis
 F   ! quantum dot
 T   ! transport 
-16         !length
--10.0  4.0   1400    ! emin emax num_en
+16         ! length num cells
+-8.0  2.0   2000    ! emin emax num_en
 F   ! read potential from pot_dat
 10  ! num iter
-10.0  ! epsilon screening
-2.0  ! r0
--2.5  -2.5  ! mu_s mu_d 
+2.0  ! epsilon 
+3.0  ! r0 [ang]
+-2.1  -2.1  ! mu_s mu_d 
 300.0   300.0  ! temperature 
 0.5   ! alpha mix
-6.0  6.0  ! intraband interband cutoff energies for P and W
+1.0  20.0  ! intraband interband cutoff energies for P and W
 F     ! read Coulomb blocks
-F     ! only diag
-F     ! RGF
-T     ! 2D with kz
-9     ! num kz
-F    ! e photon
+T     ! only diag
+T     ! RGF
+T     ! 2d kz
+16  1
+T     ! e photon
+0.75   0e13  ! hw [eV] I [W/m2]
+1.0  0.0   0.0
+F     ! no gw
+F     ! abs 
