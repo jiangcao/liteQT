@@ -2364,7 +2364,9 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   enddo
 
   deallocate(g_r_i1, cur, tmp0, tmp1)
-  deallocate(g_r_buf, g_lesser_extended_buf, g_greater_extended_buf)
+  ! deallocate(g_r_buf, g_lesser_extended_buf, g_greater_extended_buf)
+  deallocate(g_r_buf, g_lesser_buf, g_greater_buf)
+  deallocate(g_lesser_photon_buf, g_greater_photon_buf)
   deallocate(sigma_lesser_gw_buf, sigma_greater_gw_buf, sigma_r_gw_buf)
   deallocate(sigma_lesser_new_buf, sigma_greater_new_buf, sigma_r_new_buf)
   deallocate(P_retarded_buf, P_lesser_buf, P_greater_buf)
