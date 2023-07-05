@@ -1647,7 +1647,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("G computation time = ", F6.3 ," seconds.")', finish-start
+      print '("G computation time = ", F0.3 ," seconds.")', finish-start
       print *, 'Storing G ...'
     endif
     start = finish
@@ -1686,7 +1686,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("G storage time = ", F6.3 ," seconds.")', finish-start
+      print '("G storage time = ", F0.3 ," seconds.")', finish-start
       print *, 'Computing P ...'
     endif
     start = finish
@@ -1840,7 +1840,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("P computation time = ", F6.3 ," seconds.")', finish-start
+      print '("P computation time = ", F0.3 ," seconds.")', finish-start
       print *, 'Storing P ...'
     endif
     start = finish
@@ -1861,7 +1861,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("P storage time = ", F6.3 ," seconds.")', finish-start
+      print '("P storage time = ", F0.3 ," seconds.")', finish-start
       print *, 'Computing W ...'
     endif
     start = finish
@@ -1889,7 +1889,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("W computation time = ", F6.3 ," seconds.")', finish-start
+      print '("W computation time = ", F0.3 ," seconds.")', finish-start
       print *, 'Storing W ...'
     endif
     start = finish
@@ -1910,7 +1910,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("W storage time = ", F6.3 ," seconds.")', finish-start
+      print '("W storage time = ", F0.3 ," seconds.")', finish-start
       print *, 'Computing SigGW ...'
     endif
     start = finish
@@ -2064,7 +2064,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("SigGW computation time = ", F6.3 ," seconds.")', finish-start
+      print '("SigGW computation time = ", F0.3 ," seconds.")', finish-start
       print *, 'Storing SigGW ...'
     endif
     start = finish
@@ -2085,7 +2085,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("SigGW storage time = ", F6.3 ," seconds.")', finish-start
+      print '("SigGW storage time = ", F0.3 ," seconds.")', finish-start
     endif
 
     if (iter>=(niter-5)) then
@@ -2177,7 +2177,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       finish = MPI_Wtime()
 
       if (comm_rank == 0) then
-        print '("SigEPhoton computation time = ", F6.3 ," seconds.")', finish-start
+        print '("SigEPhoton computation time = ", F0.3 ," seconds.")', finish-start
         print *, 'Storing SigEphoton ...'
       endif
       start = finish
@@ -2198,7 +2198,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       finish = MPI_Wtime()
 
       if (comm_rank == 0) then
-        print '("SigEPhoton storage time = ", F6.3 ," seconds.")', finish-start
+        print '("SigEPhoton storage time = ", F0.3 ," seconds.")', finish-start
       endif
 
     endif
@@ -2224,7 +2224,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print '("Iteration ", I3.3, " time = ", F6.3 ," seconds.")', iter, finish-it_start
+      print '("Iteration ", I3.3, " time = ", F0.3 ," seconds.")', iter, finish-it_start
       print *, ''
     endif
 
