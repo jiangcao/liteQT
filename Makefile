@@ -6,7 +6,7 @@
 
 MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2020.0.166/linux/mkl/
 FC90 = /usr/pack/mpich-3.2.1-af/linux-x64/bin/mpif90
-F90_FLAGS = -Wall -Wextra -O2 -march=native -ffast-math -ffree-line-length-none -fopenmp -fbacktrace 
+F90_FLAGS = -Wall -Wextra -O2 -march=native -ffast-math -ffree-line-length-none -fopenmp -fbacktrace  -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
 #LIBS = -L ${MKLROOT}/lib/intel64 -lmkl_rt -lpthread -lm -ldl
 LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_gf_lp64.a ${MKLROOT}/lib/intel64/libmkl_gnu_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl 
 
@@ -54,3 +54,4 @@ clean :
 
 %.o : %.f90
 	$(FC90) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) -I$(MODDIR) -J$(MODDIR) 
+
