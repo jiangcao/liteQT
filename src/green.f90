@@ -24,6 +24,7 @@ real(8), parameter :: eps0=8.854d-12 ! C/V/m
 real(8), parameter :: c0=2.998d8 ! m/s
 real(8), parameter :: e0=1.6022d-19 ! C
 REAL(8), PARAMETER :: pi = 3.14159265359d0
+REAL(8), PARAMETER :: tpi = 3.14159265359d0*2.0d0
 
 CONTAINS
 
@@ -993,6 +994,9 @@ do iter=0,niter
   call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
   call write_transmission_spectrum('gw_TE_LR',iter,Te(:,1,2)*spindeg,nen,En)
   call write_transmission_spectrum('gw_TE_RL',iter,Te(:,2,1)*spindeg,nen,En)
+  open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
+  write(101,'(I4,2E16.6)') iter, sum(Tr(:,1))*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg), sum(Tr(:,2))*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+  close(101)
   !
   G_retarded=dcmplx(0.0d0*dble(G_retarded),aimag(G_retarded))
   G_lesser=dcmplx(0.0d0*dble(G_lesser),aimag(G_lesser))
@@ -3011,31 +3015,31 @@ select case (trim(method))
     allocate(X_in(n*2-1))
     X_in(1:n)=X
     X_in(n+1:n*2-1)=czero
-    call do_mkl_dfti_conv(n,X_in,Y,Z)
+    !call do_mkl_dfti_conv(n,X_in,Y,Z)
     deallocate(X_in)
 end select
 end function conv1d
 
-subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
-! 1D complex to complex
-Use MKL_DFTI
-integer :: n
-Complex(8) :: X_in(n),Y_in(n),Z_out(n)
-Complex(8) :: X_out(n),Y_out(n),Z_in(n)
-type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
-Integer :: Status
-! Perform a complex to complex transform
-Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
-Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
-Status = DftiCommitDescriptor( My_Desc1_Handle )
-Status = DftiComputeForward( My_Desc1_Handle, X_in, X_out )
-Status = DftiComputeForward( My_Desc1_Handle, Y_in, Y_out )
-!
-Z_in(:) = X_out(:) * Y_out(:)
-!
-Status = DftiComputeBackward( My_Desc1_Handle, Z_in, Z_out )
-Status = DftiFreeDescriptor(My_Desc1_Handle)
-end subroutine do_mkl_dfti_conv
+!subroutine do_mkl_dfti_conv(n,X_in,Y_in,Z_out)
+!! 1D complex to complex
+!Use MKL_DFTI
+!integer :: n
+!Complex(8) :: X_in(n),Y_in(n),Z_out(n)
+!Complex(8) :: X_out(n),Y_out(n),Z_in(n)
+!type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+!Integer :: Status
+!! Perform a complex to complex transform
+!Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
+!Status = DftiSetValue( My_Desc1_Handle, DFTI_PLACEMENT, DFTI_NOT_INPLACE)
+!Status = DftiCommitDescriptor( My_Desc1_Handle )
+!Status = DftiComputeForward( My_Desc1_Handle, X_in, X_out )
+!Status = DftiComputeForward( My_Desc1_Handle, Y_in, Y_out )
+!!
+!Z_in(:) = X_out(:) * Y_out(:)
+!!
+!Status = DftiComputeBackward( My_Desc1_Handle, Z_in, Z_out )
+!Status = DftiFreeDescriptor(My_Desc1_Handle)
+!end subroutine do_mkl_dfti_conv
 
 
 ! calculate matrix blocks for the Open Boundary Condition of W

@@ -14,8 +14,8 @@ public :: green_rgf_solve_gw_3d
 public :: green_rgf_solve_gw_ephoton_3d
 public :: green_rgf_solve_gw_ephoton_3d_mpi
 
-complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
-complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+complex(8), parameter :: cone = dcmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = dcmplx(0.0d0,0.0d0)
 real(8), parameter :: hbar=1.0546d-34 ! m^2 kg / s
 real(8), parameter :: m0=9.109d-31 ! kg
 real(8), parameter :: eps0=8.854d-12 ! C/V/m 
@@ -25,6 +25,49 @@ REAL(8), PARAMETER :: pi = 3.14159265359d0
 REAL(8), PARAMETER :: tpi = 3.14159265359d0*2.0d0
 
 CONTAINS
+
+
+! calculate e-photon polarization self-energies in the monochromatic assumption, for independent electron-hole pair
+subroutine calc_pi_ephoton_monochromatic(nm,length,nen,En,nop,M,G_lesser,G_greater,Pi_retarded,Pi_lesser,Pi_greater)
+integer,intent(in)::nm,length,nen,nop
+real(8),intent(in)::en(nen)
+complex(8),intent(in),dimension(nm,nm,length)::M ! e-photon interaction matrix
+complex(8),intent(in),dimension(nm,nm,length,nen)::G_lesser,G_greater
+complex(8),intent(inout),dimension(nm,nm,length)::Pi_retarded,Pi_lesser,Pi_greater
+!---------
+integer::ie,ix
+complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+complex(8)::dE
+  Pi_lesser=0.0d0
+  Pi_greater=0.0d0
+  Pi_retarded=0.0d0  
+  dE= dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi ) 
+  ! Pi^<>(hw) = \Sum_E M G^<>(E) M G^><(E - hw) M
+  !$omp parallel default(shared) private(ix,ie,A,B) 
+  allocate(B(nm,nm))
+  allocate(A(nm,nm))  
+  !$omp do
+  do ix=1,length
+    do ie=1,nen
+      if ((ie-nop>=1).and.(ie-nop<=nen)) then
+        ! Pi^<(hw) = \sum_E M G<(E) M G>(E-hw)
+        call zgemm('n','n',nm,nm,nm,cone,M,nm,G_lesser(:,:,ix,ie),nm,czero,B,nm) 
+        call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ix),nm,czero,A,nm) 
+        call zgemm('n','n',nm,nm,nm,cone,A,nm,G_greater(:,:,ix,ie-nop),nm,cone,Pi_lesser(:,:,ix),nm)         
+        ! Pi^>(hw) = \sum_E M G>(E) M G<(E-hw)   
+        call zgemm('n','n',nm,nm,nm,cone,M,nm,G_greater(:,:,ix,ie),nm,czero,B,nm) 
+        call zgemm('n','n',nm,nm,nm,cone,B,nm,M(:,:,ix),nm,czero,A,nm) 
+        call zgemm('n','n',nm,nm,nm,cone,A,nm,G_lesser(:,:,ix,ie-nop),nm,cone,Pi_greater(:,:,ix),nm)             
+      endif
+    enddo  
+  enddo
+  !$omp end do
+  deallocate(A,B)
+  !$omp end parallel
+  Pi_lesser=Pi_lesser*dE
+  Pi_greater=Pi_greater*dE
+  Pi_retarded = dcmplx(0.0d0*dble(Pi_retarded),aimag(Pi_greater-Pi_lesser)/2.0d0)
+end subroutine calc_pi_ephoton_monochromatic
 
 
 ! calculate e-photon self-energies in the monochromatic assumption
@@ -96,6 +139,8 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   !complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
   complex(8),allocatable,dimension(:,:,:)::Sii
   complex(8),allocatable,dimension(:,:,:,:)::Mii,M1i
+  complex(8),allocatable,dimension(:,:,:)::Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik,Pi_retarded
+  complex(8),allocatable::Ispec(:,:,:,:),Itot(:,:,:),Ispec_ik(:,:,:,:),Itot_ik(:,:,:)
   real(8)::tr(nen,nky*nkz),tre(nen,nky*nkz)
   integer::ie,iter,i,ix,nopmax,nop,nopphot,iop,l,h,io
   integer::ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,nk
@@ -130,6 +175,10 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
 !  allocate(W_greater_i1(nm,nm,nx,nen,nk))
 !  allocate(W_retarded_i1(nm,nm,nx,nen,nk))  
   allocate(Mii(nm,nm,nx,nk))
+  allocate(Ispec(nm,nm,nx,nen))
+  allocate(Itot(nm,nm,nx))
+  allocate(Ispec_ik(nm,nm,nx,nen))
+  allocate(Itot_ik(nm,nm,nx))
   Mii(:,:,:,:)=czero
   do i=1,3
     Mii(:,:,:,:)=Mii(:,:,:,:)+ polarization(i) * Pii(:,:,i,:,:) 
@@ -140,7 +189,7 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   do iter=0,niter
     print *,'+ iter=',iter
     !
-    print *, 'calc G'      
+    print *, 'calc G'          
     do ik=1,nk
       print *, ' ik=', ik,'/',nk
       !$omp parallel default(none) private(ie) shared(ik,nen,temp,nm,nx,en,mu,Hii,H1i,sigma_lesser_gw,sigma_greater_gw,sigma_r_gw,g_lesser,g_greater,g_r,tre,tr,cur,g_r_i1)    
@@ -153,12 +202,13 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       enddo
       !$omp end do 
       !$omp end parallel
-      call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))
+      call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))      
     enddo
     !
     call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
     call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
+    call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
     call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
     call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
     call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
@@ -315,6 +365,15 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
     call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !!!!! calculate collision integral
+    Ispec=czero
+    Itot=czero
+    do ik=1,nk
+      call calc_block_collision(sigma_lesser_gw(:,:,:,:,ik),sigma_greater_gw(:,:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+      Ispec=Ispec+Ispec_ik
+      Itot=Itot+Itot_ik
+    enddo
+    call write_spectrum('gw_Scat',iter,Ispec,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/))    
     !
     if (iter>=(niter-5)) then
       print *, 'calc SigEPhoton'
@@ -328,6 +387,31 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
       call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
       call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_new,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      Ispec=czero
+      Itot=czero
+      do ik=1,nk
+        call calc_block_collision(sigma_lesser_new(:,:,:,:,ik),sigma_greater_new(:,:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+        Ispec=Ispec+Ispec_ik
+        Itot=Itot+Itot_ik
+      enddo
+      call write_spectrum('eph_Scat',iter,Ispec,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/))
+      if (labs) then
+        print *, 'calc Pi'
+        allocate(Pi_retarded(nm,nm,nx))        
+        allocate(Pi_retarded_ik(nm,nm,nx))
+        allocate(Pi_lesser_ik(nm,nm,nx))
+        allocate(Pi_greater_ik(nm,nm,nx))                
+        do i=1,floor(4.0d0/(En(2)-En(1)))
+          Pi_retarded=czero        
+          do ik=1,nk
+            call calc_pi_ephoton_monochromatic(nm,nx,nen,En,i,Mii(:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik)  
+            Pi_retarded=Pi_retarded+Pi_retarded_ik
+          enddo
+          call write_trace('eph_absorp',iter,Pi_retarded,nx,NB,Lx,(/1.0d0/dble(nk),-1.0d0/dble(nk)/),E=dble(i)*(En(2)-En(1)))          
+        enddo        
+        deallocate(Pi_retarded)
+        deallocate(Pi_lesser_ik,Pi_greater_ik,Pi_retarded_ik)
+      endif
     endif
     ! make sure self-energy is continuous near leads (by copying edge block)
     do ix=1,2
@@ -350,6 +434,8 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
   deallocate(Mii)
   deallocate(tot_cur,tot_ecur,jdens)
+  deallocate(Ispec,Itot)
+  deallocate(Ispec_ik,Itot_ik)
 end subroutine green_rgf_solve_gw_ephoton_3d
 
 
@@ -384,6 +470,8 @@ include "mpif.h"
   complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_local_k,W_greater_local_k,W_retarded_local_k
   complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_local_x,W_greater_local_x,W_retarded_local_x  
   complex(8),allocatable,dimension(:,:,:,:,:)::sbuf,rbuf
+  complex(8),allocatable::Ispec(:,:,:,:),Itot(:,:,:),Ispec_ik(:,:,:,:),Itot_ik(:,:,:)
+  complex(8),allocatable,dimension(:,:,:)::Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik,Pi_retarded
   complex(8),dimension(nm,nm,nx,nky*nkz)::Mii!,M1i
   real(8),allocatable,dimension(:,:)::tr,tre,tr_local_k,tre_local_k
   integer::ie,iter,i,ix,nopmax,nop,nopphot,iop,l,h,io
@@ -460,14 +548,14 @@ include "mpif.h"
       enddo
       !$omp end do 
       !$omp end parallel  
-      call calc_block_current(Hii(:,:,:,ik),G_lesser_local_k(:,:,:,:,ik),cur_local_k(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur_local_k(:,:,:,ik),tot_ecur_local_k(:,:,:,ik),jdens_local_k(:,:,:,:,ik))    
+      call calc_block_current(Hii(:,:,:,ik+(rank)*nk),G_lesser_local_k(:,:,:,:,ik),cur_local_k(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur_local_k(:,:,:,ik),tot_ecur_local_k(:,:,:,ik),jdens_local_k(:,:,:,:,ik))    
     enddo          
-    call write_spectrum_summed_over_k('gw_ldos_r'//string(rank),iter,g_r_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
-    call write_spectrum_summed_over_k('gw_ndos_r'//string(rank),iter,g_lesser_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
-    call write_spectrum_summed_over_k('gw_pdos_r'//string(rank),iter,g_greater_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
-    call write_current_spectrum_summed_over_kz('gw_Jdens_r'//string(rank),iter,jdens_local_k,nen,En,nx*ns,NB,Lx,nk)  
-    call write_transmission_spectrum_k('gw_trR_r'//string(rank),iter,tr_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
-    call write_transmission_spectrum_k('gw_trL_r'//string(rank),iter,tre_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+!    call write_spectrum_summed_over_k('gw_ldos_r'//string(rank),iter,g_r_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
+!    call write_spectrum_summed_over_k('gw_ndos_r'//string(rank),iter,g_lesser_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
+!    call write_spectrum_summed_over_k('gw_pdos_r'//string(rank),iter,g_greater_local_k,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/)) 
+!    call write_current_spectrum_summed_over_kz('gw_Jdens_r'//string(rank),iter,jdens_local_k,nen,En,nx*ns,NB,Lx,nk)  
+!    call write_transmission_spectrum_k('gw_trR_r'//string(rank),iter,tr_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+!    call write_transmission_spectrum_k('gw_trL_r'//string(rank),iter,tre_local_k*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
     !!! reduce to sum up k points
     allocate(g_r(nm,nm,nx,nen,nk))  
     allocate(g_greater(nm,nm,nx,nen,nk))
@@ -1002,6 +1090,19 @@ include "mpif.h"
     Sigma_r_gw_local_k= Sigma_r_gw_local_k+ alpha_mix * (Sigma_r_new_local_k -Sigma_r_gw_local_k)
     Sigma_lesser_gw_local_k  = Sigma_lesser_gw_local_k+ alpha_mix * (Sigma_lesser_new_local_k -Sigma_lesser_gw_local_k)
     Sigma_greater_gw_local_k = Sigma_greater_gw_local_k+ alpha_mix * (Sigma_greater_new_local_k -Sigma_greater_gw_local_k)  
+    !
+    allocate(Ispec(nm,nm,nx,nen))
+    allocate(Itot(nm,nm,nx))
+    allocate(Ispec_ik(nm,nm,nx,nen))
+    allocate(Itot_ik(nm,nm,nx))
+    !!!!! calculate collision integral
+    Ispec=czero
+    Itot=czero
+    do ik=1,nk
+      call calc_block_collision(sigma_lesser_gw_local_k(:,:,:,:,ik),sigma_greater_gw_local_k(:,:,:,:,ik),G_lesser_local_k(:,:,:,:,ik),G_greater_local_k(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+      Ispec=Ispec+Ispec_ik
+      Itot=Itot+Itot_ik
+    enddo        
     ! 
     allocate(sigma_r_gw(nm,nm,nx,nen,nk))  
     allocate(sigma_greater_gw(nm,nm,nx,nen,nk))
@@ -1009,6 +1110,7 @@ include "mpif.h"
     sigma_r_gw=czero
     sigma_lesser_gw=czero
     sigma_greater_gw=czero    
+    Ispec_ik=czero
     if (rank == 0) then
       print *,' reduce'
     endif
@@ -1024,12 +1126,17 @@ include "mpif.h"
     call MPI_Reduce(sigma_greater_gw_local_k, sigma_greater_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                 MPI_SUM, 0, MPI_COMM_WORLD, ierror)
     sigma_greater_gw=sigma_greater_gw/dble(nnode)
+    call MPI_Barrier(MPI_COMM_WORLD,ierror)
+    call MPI_Reduce(Ispec, Ispec_ik, nm*nm*nx*nen, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+    Ispec_ik=Ispec_ik/dble(nnode)
     !
     if ( rank==0 ) then
       call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
       call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
       call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    endif
+      call write_spectrum('gw_Scat',iter,Ispec_ik,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/)) 
+    endif    
     !
     if (iter>=(niter-5)) then
       if ( rank==0 ) then
@@ -1043,6 +1150,38 @@ include "mpif.h"
       Sigma_r_gw_local_k       = Sigma_r_gw_local_k + Sigma_r_new_local_k 
       Sigma_lesser_gw_local_k  = Sigma_lesser_gw_local_k + Sigma_lesser_new_local_k 
       Sigma_greater_gw_local_k = Sigma_greater_gw_local_k + Sigma_greater_new_local_k 
+      !!!!! calculate collision integral      
+      Ispec=czero
+      Itot=czero
+      do ik=1,nk
+        call calc_block_collision(sigma_lesser_new_local_k(:,:,:,:,ik),sigma_greater_new_local_k(:,:,:,:,ik),G_lesser_local_k(:,:,:,:,ik),G_greater_local_k(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+        Ispec=Ispec+Ispec_ik
+        Itot=Itot+Itot_ik
+      enddo
+      !!!!! calculate light absorption 
+      if (labs) then        
+        allocate(Pi_retarded(nm,nm,nx))        
+        allocate(Pi_retarded_ik(nm,nm,nx))
+        allocate(Pi_lesser_ik(nm,nm,nx))
+        allocate(Pi_greater_ik(nm,nm,nx))                
+        do i=1,floor(4.0d0/(En(2)-En(1)))
+          Pi_retarded=czero        
+          do ik=1,nk
+            call calc_pi_ephoton_monochromatic(nm,nx,nen,En,i,Mii(:,:,:,ik+(rank)*nk),G_lesser_local_k(:,:,:,:,ik),G_greater_local_k(:,:,:,:,ik),Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik)  
+            Pi_retarded=Pi_retarded+Pi_retarded_ik
+          enddo
+          Pi_retarded_ik=czero
+          call MPI_Reduce(Pi_retarded, Pi_retarded_ik, nm*nm*nx, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+          Pi_retarded_ik=Pi_retarded_ik/dble(nnode)
+          if ( rank==0 ) then
+            call write_trace('eph_absorp',iter,Pi_retarded_ik,nx,NB,Lx,(/1.0d0/dble(nk),-1.0d0/dble(nk)/),E=dble(i)*(En(2)-En(1)))          
+          endif
+          call MPI_Barrier(MPI_COMM_WORLD,ierror)
+        enddo        
+        deallocate(Pi_retarded)
+        deallocate(Pi_lesser_ik,Pi_greater_ik,Pi_retarded_ik)
+      endif
       ! 
       sigma_r_gw=czero
       sigma_lesser_gw=czero
@@ -1062,12 +1201,17 @@ include "mpif.h"
       call MPI_Reduce(sigma_greater_new_local_k, sigma_greater_gw, nm*nm*nx*nen*nk, MPI_C_DOUBLE_COMPLEX, &
                   MPI_SUM, 0, MPI_COMM_WORLD, ierror)
       sigma_greater_gw=sigma_greater_gw/dble(nnode) 
+      call MPI_Reduce(Ispec, Ispec_ik, nm*nm*nx*nen, MPI_C_DOUBLE_COMPLEX, &
+                MPI_SUM, 0, MPI_COMM_WORLD, ierror)
+      Ispec_ik=Ispec_ik/dble(nnode)
       if ( rank==0 ) then
           call write_spectrum_summed_over_k('eph_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
           call write_spectrum_summed_over_k('eph_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
           call write_spectrum_summed_over_k('eph_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-      endif
-    endif
+          call write_spectrum('eph_Scat',iter,Ispec_ik,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/)) 
+      endif      
+    endif  
+    deallocate(Ispec,Itot,Ispec_ik,Itot_ik)  
     !!! make sure self-energy is continuous near leads by copying edge block
     do ix=1,2
       Sigma_r_gw_local_k(:,:,ix,:,:)=Sigma_r_gw_local_k(:,:,3,:,:)
@@ -1083,7 +1227,7 @@ include "mpif.h"
     deallocate(sigma_r_gw,sigma_lesser_gw,sigma_greater_gw)
   enddo  
   deallocate(g_r_local_k,g_lesser_local_k,g_greater_local_k)  
-  deallocate(sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k)       
+  deallocate(sigma_lesser_gw_local_k,sigma_greater_gw_local_k,sigma_r_gw_local_k)         
 end subroutine green_rgf_solve_gw_ephoton_3d_mpi
 
 
@@ -1103,8 +1247,8 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser,P_greater,P_retarded
   !complex(8),allocatable,dimension(:,:,:,:,:)::P_lesser_1i,P_greater_1i,P_retarded_1i
   complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser,W_greater,W_retarded
-  !complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1
-  complex(8),allocatable,dimension(:,:,:)::Sii
+  !complex(8),allocatable,dimension(:,:,:,:,:)::W_lesser_i1,W_greater_i1,W_retarded_i1  
+  complex(8),allocatable::Ispec(:,:,:,:),Itot(:,:,:),Ispec_ik(:,:,:,:),Itot_ik(:,:,:)
   real(8)::tr(nen,nky*nkz),tre(nen,nky*nkz)
   integer::ie,iter,i,ix,nopmax,nop,iop,l,h,io
   integer::ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,nk
@@ -1138,6 +1282,10 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
 !  allocate(W_lesser_i1(nm,nm,nx,nen,nk))
 !  allocate(W_greater_i1(nm,nm,nx,nen,nk))
 !  allocate(W_retarded_i1(nm,nm,nx,nen,nk))  
+  allocate(Ispec(nm,nm,nx,nen))
+  allocate(Itot(nm,nm,nx))
+  allocate(Ispec_ik(nm,nm,nx,nen))
+  allocate(Itot_ik(nm,nm,nx))
   do iter=0,niter
     print *,'+ iter=',iter
     !
@@ -1326,6 +1474,16 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
     call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !!!!! calculate collision integral
+    Ispec=czero
+    Itot=czero
+    do ik=1,nk
+      call calc_block_collision(sigma_lesser_gw(:,:,:,:,ik),sigma_greater_gw(:,:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+      Ispec=Ispec+Ispec_ik
+      Itot=Itot+Itot_ik
+    enddo
+    call write_spectrum('gw_Scat',iter,Ispec,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/))    
+    !
   enddo
   deallocate(g_r,g_lesser,g_greater,cur)
   deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
@@ -1335,6 +1493,8 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
   deallocate(W_retarded,W_lesser,W_greater)
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
   deallocate(tot_cur,tot_ecur,jdens)
+  deallocate(Ispec,Itot)
+  deallocate(Ispec_ik,Itot_ik)
 end subroutine green_rgf_solve_gw_3d
 
 
@@ -1516,7 +1676,7 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
   !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
   deallocate(W_retarded,W_lesser,W_greater)
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
-  deallocate(tot_cur,tot_ecur,jdens)
+  deallocate(tot_cur,tot_ecur,jdens)  
 end subroutine green_rgf_solve_gw_1d
 
 
@@ -2238,6 +2398,33 @@ close(11)
 end subroutine write_spectrum
 
 
+! calculate scattering collision integral from the self-energy, for diagonal blocks
+! I = Sig> G^< - Sig< G^>
+subroutine calc_block_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm,nx,I,Ispec)
+complex(8),intent(in),dimension(nm,nm,nx,nen)::G_greater,G_lesser,Sig_lesser,Sig_greater
+real(8),intent(in)::en(nen),spindeg
+integer,intent(in)::nen,nm,nx
+complex(8),intent(out)::I(nm,nm,nx) ! collision integral
+complex(8),intent(out),optional::Ispec(nm,nm,nx,nen) ! collision integral spectrum
+!----
+complex(8),allocatable::B(:,:)
+integer::ie,ix
+real(8),parameter::tpi=6.28318530718  
+  allocate(B(nm,nm))
+  I=dcmplx(0.0d0,0.0d0)
+  do ix=1,nx
+    do ie=1,nen    
+      call zgemm('n','n',nm,nm,nm,cone,Sig_greater(:,:,ix,ie),nm,G_lesser(:,:,ix,ie),nm,czero,B,nm)
+      call zgemm('n','n',nm,nm,nm,-cone,Sig_lesser(:,:,ix,ie),nm,G_greater(:,:,ix,ie),nm,cone,B,nm) 
+      I(:,:,ix)=I(:,:,ix)+B(:,:)
+      if (present(Ispec)) Ispec(:,:,ix,ie)=B(:,:)*spindeg    
+    enddo
+  enddo
+  I(:,:,:)=I(:,:,:)*dble(en(2)-en(1))/tpi*spindeg
+  deallocate(B)
+end subroutine calc_block_collision
+
+
 ! calculate bond current within each block using I_ij = H_ij G<_ji - H_ji G^<_ij
 subroutine calc_block_current(H,G_lesser,cur,nen,en,spindeg,nb,ns,nm,nx,tot_cur,tot_ecur,jdens)
 complex(8),intent(in)::H(nm,nm,nx),G_lesser(nm,nm,nx,nen)
@@ -2326,7 +2513,7 @@ subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,
           enddo                        
         enddo
       enddo
-      write(11,'(3E18.4)') dble(j-1)*Lx, en(ie), dble(tr)
+      write(11,'(3E18.4)') dble(j-1)*Lx, en(ie), dble(tr)/dble(nk)
     enddo
     write(11,*)    
   enddo
@@ -2352,7 +2539,7 @@ real(8)::tr
         enddo
       enddo                        
     end do
-    write(11,'(2E18.4)') dble(ii-1)*Lx, tr
+    write(11,'(2E18.4)') dble(ii-1)*Lx, tr/dble(nk)
   end do
 end subroutine write_current_summed_over_k
 
@@ -2449,6 +2636,34 @@ do ie = 1,nen
 end do
 close(11)
 end subroutine write_transmission_spectrum_k
+
+
+
+! write trace of diagonal blocks
+subroutine write_trace(dataset,i,G,length,NB,Lx,coeff,E)
+character(len=*), intent(in) :: dataset
+complex(8), intent(in) :: G(:,:,:)
+integer, intent(in)::i,length,NB
+real(8), intent(in)::Lx,coeff(2)
+real(8), intent(in),optional::E
+integer:: ie,j,ib,ix
+complex(8)::tr
+open(unit=11,file=trim(dataset)//'_'//TRIM(STRING(i))//'.dat',status='unknown', position="append", action="write")
+do j = 1,length
+    tr=0.0d0          
+    do ib=1,nb
+        tr = tr+ G(ib,ib,j)            
+    end do
+    if (.not.(present(E))) then
+     write(11,'(3E18.4)') (j-1)*Lx, dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+    else
+     write(11,'(4E18.4)') (j-1)*Lx, E, dble(tr)*coeff(1), aimag(tr)*coeff(2)         
+    endif
+end do
+write(11,*)
+close(11)
+end subroutine write_trace
+
 
 
 FUNCTION STRING(inn)
