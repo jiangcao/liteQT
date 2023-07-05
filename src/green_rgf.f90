@@ -1185,7 +1185,8 @@ include "mpif.h"
       ! 
       sigma_r_gw=czero
       sigma_lesser_gw=czero
-      sigma_greater_gw=czero    
+      sigma_greater_gw=czero   
+      Ispec_ik=czero 
       if (rank == 0) then
         print *,' reduce'
       endif
