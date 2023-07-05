@@ -1420,7 +1420,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   complex(8), pointer :: g_lesser_photon_buf(:), g_greater_photon_buf(:)
   complex(8), pointer :: g_lesser_photon(:, :, :, :), g_greater_photon(:, :, :, :)
 
-  real(8) :: start, finish
+  real(8) :: start, finish, it_start
 
   real(8), allocatable :: extended_local_energies(:)
 
@@ -1593,31 +1593,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   g_greater_t_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_greater_t_buf
   g_lesser_t_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => g_lesser_t_buf
 
-  ! For debugging/validation
-  ! allocate(g_r_buf2(nm * nm * nx * local_NE * nk))
-  ! allocate(g_greater_buf2(nm * nm * nx * local_NE * nk))
-  ! allocate(g_lesser_buf2(nm * nm * nx * local_NE * nk))
-
-  ! g_r_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_r_buf2
-  ! g_greater_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_greater_buf2
-  ! g_lesser_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => g_lesser_buf2
-
-  ! g_r_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => g_r_buf2
-  ! g_greater_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => g_greater_buf2
-  ! g_lesser_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => g_lesser_buf2
-
-  ! allocate(P_retarded_buf2(nm * nm * nx * local_NE * nk))
-  ! allocate(P_greater_buf2(nm * nm * nx * local_NE * nk))
-  ! allocate(P_lesser_buf2(nm * nm * nx * local_NE * nk))
-
-  ! P_retarded_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => P_retarded_buf2
-  ! P_greater_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => P_greater_buf2
-  ! P_lesser_by_energies2(1:nm, 1:nm, 1:nx, 1:local_NE, 1:nk) => P_lesser_buf2
-
-  ! P_retarded_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => P_retarded_buf2
-  ! P_greater_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => P_greater_buf2
-  ! P_lesser_by_blocks2(1:NM, 1:NM, 1:local_NX, 1:NE, 1:nk) => P_lesser_buf2
-
   sigma_greater_gw_buf = dcmplx(0.0d0,0.0d0)
   sigma_lesser_gw_buf = dcmplx(0.0d0,0.0d0)
   sigma_r_gw_buf = dcmplx(0.0d0,0.0d0)
@@ -1641,9 +1616,13 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     if (comm_rank == 0) then
       print *,'+ iter=',iter
     endif
-    !
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    start = MPI_Wtime()
+    it_start = start
+
     if (comm_rank == 0) then
-      print *, 'calc G'
+      print *, 'Computing G ...'
     endif
         
     do ik=1,nk
@@ -1663,20 +1642,15 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       !$omp end do 
       !$omp end parallel
     enddo
-    !
 
-    ! filename = 'gw_ldos_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,g_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))
-    ! filename = 'gw_ndos_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_pdos_r' // rank_str // '_'   
-    ! call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))
-    ! filename = 'gw_Jdens_r' // rank_str // '_'
-    ! call write_current_spectrum_summed_over_kz(filename,iter,cur,local_NE,local_energies,nx,NB*NS,Lx*NS,nk)
-    ! filename = 'gw_trL_r' // rank_str // '_'
-    ! call write_transmission_spectrum_k(filename,iter,tr*spindeg,local_NE,local_energies,nk)
-    ! filename = 'gw_trR_r' // rank_str // '_'
-    ! call write_transmission_spectrum_k(filename,iter,tre*spindeg,local_NE,local_energies,nk)
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("G computation time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Storing G ...'
+    endif
+    start = finish
 
     do i = 0, comm_size - 1
       if (i == comm_rank) then
@@ -1708,30 +1682,21 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       close(101)
     endif
 
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("G storage time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Computing P ...'
+    endif
+    start = finish
+
     g_r_buf = dcmplx( 0.0d0*dble(g_r_buf), aimag(g_r_buf))
     g_lesser_buf = dcmplx( 0.0d0*dble(g_lesser_buf), aimag(g_lesser_buf))
     g_greater_buf = dcmplx( 0.0d0*dble(g_greater_buf), aimag(g_greater_buf))
 
-    do i = 0, comm_size - 1
-      if (i == comm_rank) then
-        filename = 'gw_GL'
-        call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_GG'   
-        call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
-      endif
-      call MPI_Barrier(MPI_COMM_WORLD, ierr)
-    enddo
-
     g_greater_t_by_energies = reshape(g_greater_by_energies, shape(g_greater_t_by_energies), order=[2, 1, 3, 4, 5])
     g_lesser_t_by_energies = reshape(g_lesser_by_energies, shape(g_lesser_t_by_energies), order=[2, 1, 3, 4, 5])
-
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
-    if (comm_rank == 0) then     
-      print *, 'calc P'
-    endif
-
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
     ! Redistribute G
     call energies_to_ijs_2(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
@@ -1745,14 +1710,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     P_retarded_buf = dcmplx(0.0d0,0.0d0)    
 
     nopmax=nen/2-10
-
-    if (comm_rank == 0) then     
-      print *, 'Redistributed G'
-    endif
-
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
-    call omp_get_wtime(start)
 
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)         
@@ -1843,12 +1800,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif     
     enddo          
 
-    call omp_get_wtime(finish)
-    ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
-    print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
-
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
     dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg /dble(nk)
     P_lesser_buf = P_lesser_buf * dE
     P_greater_buf = P_greater_buf * dE
@@ -1885,121 +1836,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     !$omp end do 
     !$omp end parallel
 
-    ! do ik = 1, nk
-    !   do ie = 1, local_NE
-    !     do ix = 1, nx
-    !       do j = 1, nm      
-    !         do i = 1, nm
-    !           if (i .ne. j) then
-    !             if (abs(P_retarded_by_energies(i,j,ix,ie,ik)) > 1.0d-10) then
-    !               print *, comm_rank, ': (', i, j, ix, ie, ik, '): ', P_retarded_by_energies(i,j,ix,ie,ik)
-    !               return
-    !             endif
-    !           endif
-    !         enddo
-    !       enddo      
-    !     enddo
-    !   enddo
-    ! enddo
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
 
-    ! print *, comm_rank, ': zeroing out off-diagonals correct.'
-
-    ! !!!! VALIDATION !!!!
-
-    ! ! g_r_buf2 = g_r_buf
-    ! ! g_lesser_buf2 = g_lesser_buf
-    ! ! g_greater_buf2 = g_greater_buf
-
-    ! ! Redistribute G
-    ! call energies_to_blocks(g_r_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call energies_to_blocks(g_lesser_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call energies_to_blocks(g_greater_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-
-    ! P_lesser_buf2 = dcmplx(0.0d0,0.0d0)
-    ! P_greater_buf2 = dcmplx(0.0d0,0.0d0)    
-    ! P_retarded_buf2 = dcmplx(0.0d0,0.0d0)    
-
-    ! nopmax=nen/2-10
-
-    ! ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
-    ! ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
-    ! !$omp parallel default(shared) private(ix,l,h,iop,nop,ie,i,ikz,ikzd,iqz,iky,ikyd,iqy,ik,iq,ikd)
-    ! !$omp do         
-    ! do nop=-nopmax,nopmax
-    !   iop=nop+nen/2  
-    !   do iqy=1,nky        
-    !     do iqz=1,nkz
-    !       iq=iqz + (iqy-1)*nkz
-    !       ! do ix=1,nx
-    !       do ix = 1, local_NX
-    !         do i=1,nm      
-    !           l=max(i-ndiag,1)
-    !           h=min(nm,i+ndiag)   
-    !           do iky=1,nky
-    !             do ikz=1,nkz              
-    !               ik=ikz + (iky-1)*nkz
-    !               ikzd=ikz-iqz + nkz/2
-    !               ikyd=iky-iqy + nky/2
-    !               if (ikzd<1)   ikzd=ikzd+nkz
-    !               if (ikzd>nkz) ikzd=ikzd-nkz
-    !               if (ikyd<1)   ikyd=ikyd+nky
-    !               if (ikyd>nky) ikyd=ikyd-nky                
-    !               if (nky==1)   ikyd=1
-    !               if (nkz==1)   ikzd=1
-    !               ikd=ikzd + (ikyd-1)*nkz
-    !               do ie = max(nop+1,1),min(nen,nen+nop)
-
-    !                 P_lesser_by_blocks2(i,l:h,ix,iop,iq) = P_lesser_by_blocks2(i,l:h,ix,iop,iq) + G_lesser_by_blocks2(i,l:h,ix,ie,ik) * G_greater_by_blocks2(l:h,i,ix,ie-nop,ikd)
-    !                 P_greater_by_blocks2(i,l:h,ix,iop,iq) = P_greater_by_blocks2(i,l:h,ix,iop,iq) + G_greater_by_blocks2(i,l:h,ix,ie,ik) * G_lesser_by_blocks2(l:h,i,ix,ie-nop,ikd)        
-    !                 P_retarded_by_blocks2(i,l:h,ix,iop,iq) = P_retarded_by_blocks2(i,l:h,ix,iop,iq) + (G_lesser_by_blocks2(i,l:h,ix,ie,ik) * conjg(G_r_by_blocks2(i,l:h,ix,ie-nop,ikd)) & 
-    !                                           & + G_r_by_blocks2(i,l:h,ix,ie,ik) * G_lesser_by_blocks2(l:h,i,ix,ie-nop,ikd))    
-                    
-    !               enddo
-    !             enddo
-    !           enddo
-    !         enddo
-    !       enddo
-    !     enddo
-    !   enddo      
-    ! enddo          
-    ! !$omp end do 
-    ! !$omp end parallel
-
-    ! dE = dcmplx(0.0d0 , -1.0d0*( En(2) - En(1) ) / 2.0d0 / pi )	 * spindeg /dble(nk)
-    ! P_lesser_buf2 = P_lesser_buf2 * dE
-    ! P_greater_buf2 = P_greater_buf2 * dE
-    ! P_retarded_buf2 = P_retarded_buf2 * dE
-
-    ! ! Redistribute P
-    ! call blocks_to_energies(P_retarded_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call blocks_to_energies(P_lesser_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-    ! call blocks_to_energies(P_greater_buf2, tmp0, tmp1, nm, nx, nen, nk, local_NX, local_NE, first_local_block, first_local_energy, comm_rank, comm_size)
-
-
-    ! do ik = 1, nk
-    !   do ie = 1, local_NE
-    !     do ix = 1, nx
-    !       do j = 1, nm
-    !         do i = 1, nm
-    !           if (abs(P_retarded_by_energies2(i,j,ix,ie,ik) - P_retarded_by_energies(i,j,ix,ie,ik)) > 1.0d-10) then
-    !             print *, comm_rank, ': (', i, j, ix, ie, ik, '): ', P_retarded_by_energies2(i,j,ix,ie,ik), P_retarded_by_energies(i,j,ix,ie,ik)
-    !             return
-    !           endif 
-    !         enddo
-    !       enddo
-    !     enddo
-    !   enddo
-    ! enddo
-
-
-    ! !!!!!!!!!!!!!!!!!!!!
-
-    ! filename = 'gw_PR_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,P_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_PL_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,P_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_PG_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,P_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    if (comm_rank == 0) then
+      print '("P computation time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Storing P ...'
+    endif
+    start = finish
 
     do i = 0, comm_size - 1
       if (i == comm_rank) then
@@ -2014,10 +1858,13 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     enddo
 
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print *, 'calc W'
+      print '("P storage time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Computing W ...'
     endif
+    start = finish
 
     do iq=1,nky*nkz
 
@@ -2038,12 +1885,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       !$omp end parallel
     enddo
 
-    ! filename = 'gw_WR_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,W_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_WL_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,W_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_WG_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,W_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("W computation time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Storing W ...'
+    endif
+    start = finish
 
     do i = 0, comm_size - 1
       if (i == comm_rank) then
@@ -2058,10 +1907,13 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     enddo
 
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
 
     if (comm_rank == 0) then
-      print *, 'calc SigGW'
+      print '("W storage time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Computing SigGW ...'
     endif
+    start = finish
 
     call energies_to_ijs_2(W_retarded_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
     call energies_to_ijs_2(W_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
@@ -2072,10 +1924,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     Sigma_greater_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_lesser_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_r_new_buf = dcmplx(0.0d0,0.0d0)
-    
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
-    call omp_get_wtime(start)
   
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)      
     ! do ie=1,nen      
@@ -2156,12 +2004,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif      
     enddo
 
-    call omp_get_wtime(finish)
-    ! print '("Comm_rank: ", I3, ", Time = ", F6.3 ," seconds.")', comm_rank, finish-start
-    print *, 'Comm_rank: ', comm_rank, ', Time = ', finish-start, ' seconds.'
-
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
     dE = dcmplx(0.0d0, (En(2)-En(1))/2.0d0/pi) /dble(nk) 
     Sigma_lesser_new_buf = Sigma_lesser_new_buf  * dE
     Sigma_greater_new_buf = Sigma_greater_new_buf * dE
@@ -2218,12 +2060,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     Sigma_lesser_gw_buf  = Sigma_lesser_gw_buf + alpha_mix * (Sigma_lesser_new_buf - Sigma_lesser_gw_buf)
     Sigma_greater_gw_buf = Sigma_greater_gw_buf + alpha_mix * (Sigma_greater_new_buf -Sigma_greater_gw_buf)
 
-    ! filename = 'gw_SigR_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,Sigma_r_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_SigL_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,Sigma_lesser_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-    ! filename = 'gw_SigG_r' // rank_str // '_'
-    ! call write_spectrum_summed_over_k(filename,iter,Sigma_greater_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("SigGW computation time = ", F6.3 ," seconds.")', finish-start
+      print *, 'Storing SigGW ...'
+    endif
+    start = finish
 
     do i = 0, comm_size - 1
       if (i == comm_rank) then
@@ -2238,12 +2082,18 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     enddo
     
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("SigGW storage time = ", F6.3 ," seconds.")', finish-start
+    endif
 
     if (iter>=(niter-5)) then
 
       if (comm_rank == 0) then
-        print *, 'calc SigEPhoton'
+        print *, 'Computing SigEPhoton ...'
       endif
+      start = finish
 
       ! call energies_to_ijs(sigma_r_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
       ! call energies_to_ijs(sigma_lesser_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
@@ -2261,15 +2111,15 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
           print *, ' ik=', ik,'/',nk
         endif
 
-        do i = 0, comm_size - 1
-          if (i == comm_rank) then
-            filename = 'gw_GL_ik' // rank_str // '_'
-            call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-            filename = 'gw_GG_ik' // rank_str // '_'  
-            call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
-          endif
-          call MPI_Barrier(MPI_COMM_WORLD, ierr)
-        enddo
+        ! do i = 0, comm_size - 1
+        !   if (i == comm_rank) then
+        !     filename = 'gw_GL_ik' // rank_str // '_'
+        !     call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+        !     filename = 'gw_GG_ik' // rank_str // '_'  
+        !     call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies(:,:,:,:,ik:ik),local_NE,local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+        !   endif
+        !   call MPI_Barrier(MPI_COMM_WORLD, ierr)
+        ! enddo
 
         ! Copy local_NE energies to the buffers
         g_lesser_photon_buf = dcmplx(0.0d0,0.0d0)
@@ -2298,15 +2148,15 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
           call MPI_Waitall(4, reqs(5:8), MPI_STATUSES_IGNORE, ierr)
         endif
 
-        do i = 0, comm_size - 1
-          if (i == comm_rank) then
-            filename = 'gw_GL_ext_ik' // rank_str // '_'
-            call write_spectrum_summed_over_k(filename,iter,g_lesser_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-            filename = 'gw_GG_ext_ik' // rank_str // '_'   
-            call write_spectrum_summed_over_k(filename,iter,g_greater_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
-          endif
-          call MPI_Barrier(MPI_COMM_WORLD, ierr)
-        enddo
+        ! do i = 0, comm_size - 1
+        !   if (i == comm_rank) then
+        !     filename = 'gw_GL_ext_ik' // rank_str // '_'
+        !     call write_spectrum_summed_over_k(filename,iter,g_lesser_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+        !     filename = 'gw_GG_ext_ik' // rank_str // '_'   
+        !     call write_spectrum_summed_over_k(filename,iter,g_greater_photon,local_NE + 2 * nopphot,extended_local_energies,1,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+        !   endif
+        !   call MPI_Barrier(MPI_COMM_WORLD, ierr)
+        ! enddo
 
         call calc_sigma_ephoton_monochromatic_ext( &
           nm, NX, local_NE, En, nopphot, Mii(:,:,:,ik), &
@@ -2323,12 +2173,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       Sigma_lesser_gw_buf  = Sigma_lesser_gw_buf + Sigma_lesser_new_buf 
       Sigma_greater_gw_buf = Sigma_greater_gw_buf + Sigma_greater_new_buf
 
-      ! filename = 'eph_SigR_r' // rank_str // '_'
-      ! call write_spectrum_summed_over_k(filename,iter,sigma_r_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-      ! filename = 'eph_SigL_r' // rank_str // '_'
-      ! call write_spectrum_summed_over_k(filename,iter,sigma_lesser_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
-      ! filename = 'eph_SigG_r' // rank_str // '_'
-      ! call write_spectrum_summed_over_k(filename,iter,sigma_greater_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      finish = MPI_Wtime()
+
+      if (comm_rank == 0) then
+        print '("SigEPhoton computation time = ", F6.3 ," seconds.")', finish-start
+        print *, 'Storing SigEphoton ...'
+      endif
+      start = finish
 
       do i = 0, comm_size - 1
         if (i == comm_rank) then
@@ -2342,8 +2194,15 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
         call MPI_Barrier(MPI_COMM_WORLD, ierr)
       enddo
 
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      finish = MPI_Wtime()
+
+      if (comm_rank == 0) then
+        print '("SigEPhoton storage time = ", F6.3 ," seconds.")', finish-start
+      endif
+
     endif
-  
+
     ! make sure self-energy is continuous near leads (by copying edge block)
     do ix=1,2
       sigma_r_gw_by_energies(:,:,ix,:,:)=Sigma_r_gw_by_energies(:,:,3,:,:)
@@ -2360,6 +2219,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     ! call ijs_to_energies(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
     ! call ijs_to_energies(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
     ! call ijs_to_energies(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    finish = MPI_Wtime()
+
+    if (comm_rank == 0) then
+      print '("Iteration ", I3.3, " time = ", F6.3 ," seconds.")', iter, finish-it_start
+      print *, ''
+    endif
 
   enddo
 
