@@ -3421,7 +3421,9 @@ subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,
   ! open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
   do ie = 1,nen
     do j = 1,length-1
-      tr=0.0d0          
+      tr=0.0d0
+      !$omp parallel default(shared) private(ik, ib, jb) reduction(+:tr)
+      !$omp do         
       do ik=1,nk
         do ib=1,nb  
           do jb=1,nb        
@@ -3429,6 +3431,8 @@ subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,
           enddo                        
         enddo
       enddo
+      !$omp end do 
+      !$omp end parallel
       write(11,'(3E18.4)') dble(j-1)*Lx, en(ie), dble(tr)
     enddo
     write(11,*)    
@@ -3460,12 +3464,16 @@ endif
 do ie = 1,nen
   do j = 1,length
     do k=1,NS         
-      tr=0.0d0         
+      tr=0.0d0
+      !$omp parallel default(shared) private(ik, ib) reduction(+:tr)
+      !$omp do       
       do ik=1,nk
         do ib=1,nb
           tr = tr+ G(ib+(k-1)*NB,ib+(k-1)*NB,j,ie,ik)            
-        end do
+        enddo
       enddo
+      !$omp end do 
+      !$omp end parallel
       tr=tr/dble(nk)
       write(11,'(4E18.4)') (j-1)*Lx*NS+(k-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
     enddo
