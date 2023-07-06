@@ -1683,6 +1683,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
     start = finish
       
+    ! We need to convert G back to energies     
+    call ijs_to_energies_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+    call ijs_to_energies_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+
     !!!!! calculate collision integral
     
     allocate(Ispec(nm,nm,nx,local_NE))
@@ -1723,8 +1727,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       ! call energies_to_ijs(sigma_greater_new_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
       ! call ijs_to_energies_2(g_r_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-      call ijs_to_energies_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
-      call ijs_to_energies_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+      ! call ijs_to_energies_2(g_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
+      ! call ijs_to_energies_2(g_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
       do ik=1, nk
 
@@ -3839,7 +3843,7 @@ integer:: ie,j,ib,k
 complex(8)::tr
 logical append_
 append_ = .false.
-
+if (present(append)) append_ = append
 if (append_) then
   open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown',position='append')
 else
@@ -3975,8 +3979,7 @@ subroutine write_current_spectrum_summed_over_kz(dataset,i,cur,nen,en,length,NB,
     open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown',position='append')
   else
     open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
-  endif
-  ! open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  endif  
 
   do ie = 1,nen
     do j = 1,length-1
@@ -4075,7 +4078,7 @@ integer:: ie,j,ib,k,ik
 complex(8)::tr
 logical append_
 append_ = .false.
-
+if (present(append)) append_ = append
 if (append_) then
   open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown',position='append')
 else
