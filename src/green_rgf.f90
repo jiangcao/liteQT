@@ -4,6 +4,9 @@
 module green_rgf
 
 use green,only:get_OBC_blocks_for_W,get_dL_OBC_for_W
+use invert_cpp, only: init_cuda, end_cuda
+
+use, intrinsic :: iso_c_binding, only : c_int, c_ptr, c_double_complex 
 
 implicit none 
 
@@ -1001,6 +1004,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   
   complex(8),allocatable,dimension(:,:,:)::Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik,Pi_retarded ! photon Pi self-energies
 
+
   ! For debugging/validation
   ! complex(8), pointer :: g_r_buf2(:), g_r_by_energies2(:, :, :, :, :), g_r_by_blocks2(:, :, :, :, :)
   ! complex(8), pointer :: g_greater_buf2(:), g_greater_by_energies2(:, :, :, :, :), g_greater_by_blocks2(:, :, :, :, :)
@@ -1008,7 +1012,13 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
 
   ! complex(8), pointer :: P_retarded_buf2(:), P_retarded_by_energies2(:, :, :, :, :), P_retarded_by_blocks2(:, :, :, :, :)
   ! complex(8), pointer :: P_greater_buf2(:), P_greater_by_energies2(:, :, :, :, :), P_greater_by_blocks2(:, :, :, :, :)
-  ! complex(8), pointer :: P_lesser_buf2(:), P_lesser_by_energies2(:, :, :, :, :), P_lesser_by_blocks2(:, :, :, :, :)  
+  ! complex(8), pointer :: P_lesser_buf2(:), P_lesser_by_energies2(:, :, :, :, :), P_lesser_by_blocks2(:, :, :, :, :)
+
+  ierr = init_cuda()
+  if (ierr /= 0) then
+    print *, 'init_cuda failed'
+    stop
+  endif
 
   local_Nij = (nm * nm) / comm_size
   first_local_ij = local_Nij * comm_rank + 1
@@ -1894,6 +1904,9 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   deallocate(Ispec_ik,Itot_ik)
 
   deallocate(extended_local_energies)
+
+  call end_cuda()
+
 end subroutine green_rgf_solve_gw_ephoton_3d_ijs
 
 
@@ -3715,26 +3728,32 @@ deallocate(B,work,ipiv,X)
 end subroutine invert_banded
 
 
-subroutine invert(A,nn)  
-  integer :: info,lda,lwork,nn      
-  integer, dimension(:), allocatable :: ipiv
-  complex(8), dimension(nn,nn),intent(inout) :: A
-  complex(8), dimension(:), allocatable :: work
-  allocate(work(nn*nn))
-  allocate(ipiv(nn))
-  call zgetrf(nn,nn,A,nn,ipiv,info)
-  if (info.ne.0) then
-    print*,'SEVERE warning: zgetrf failed, info=',info
-    A=czero
-  else
-    call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
-    if (info.ne.0) then
-      print*,'SEVERE warning: zgetri failed, info=',info
-      A=czero
-    endif
-  endif
-  deallocate(work)
-  deallocate(ipiv)
+! subroutine invert(A,nn)  
+!   integer :: info,lda,lwork,nn      
+!   integer, dimension(:), allocatable :: ipiv
+!   complex(8), dimension(nn,nn),intent(inout) :: A
+!   complex(8), dimension(:), allocatable :: work
+!   allocate(work(nn*nn))
+!   allocate(ipiv(nn))
+!   call zgetrf(nn,nn,A,nn,ipiv,info)
+!   if (info.ne.0) then
+!     print*,'SEVERE warning: zgetrf failed, info=',info
+!     A=czero
+!   else
+!     call zgetri(nn,A,nn,ipiv,work,nn*nn,info)
+!     if (info.ne.0) then
+!       print*,'SEVERE warning: zgetri failed, info=',info
+!       A=czero
+!     endif
+!   endif
+!   deallocate(work)
+!   deallocate(ipiv)
+! end subroutine invert
+
+subroutine invert(A, nn)
+  integer :: nn
+  complex(8), dimension(nn, nn), intent(inout) :: A
+  call invert_matrix(A, nn)
 end subroutine invert
 
 

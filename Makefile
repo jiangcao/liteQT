@@ -5,10 +5,11 @@
 #FC90 = /usr/zupo/local/linux-local/mpich-4.0.2/gcc11/bin/mpifort
 
 MKLROOT = /usr/pack/intel_compiler-2020-af/x64/compilers_and_libraries_2020.0.166/linux/mkl/
+CXX = /usr/pack/mpich-3.2.1-af/linux-x64/bin/mpic++
 FC90 = /usr/pack/mpich-3.2.1-af/linux-x64/bin/mpif90
-F90_FLAGS = -Wall -Wextra -O2 -march=native -ffast-math -ffree-line-length-none -fopenmp -fbacktrace  -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function
-#LIBS = -L ${MKLROOT}/lib/intel64 -lmkl_rt -lpthread -lm -ldl
-LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_gf_lp64.a ${MKLROOT}/lib/intel64/libmkl_gnu_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl 
+F90_FLAGS = -Wall -Wextra -O2 -march=native -ffast-math -ffree-line-length-none -fopenmp -fbacktrace  -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function -fno-underscoring
+LIBS = -L ${MKLROOT}/lib/intel64 -lmkl_rt -lpthread -lm -ldl -lstdc++ -lcudart -lcusolver
+# LIBS = -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_gf_lp64.a ${MKLROOT}/lib/intel64/libmkl_gnu_thread.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl 
 
 MACFLAGS = -L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
 #F90_FLAGS =  -I"${MKLROOT}/include" -r8 -O2 -fpp -mkl -traceback  -qopenmp -qopt-matmul # -check bounds  
@@ -24,14 +25,23 @@ MODDIR = compiled
 SRCDIR = src/
 
 # Search directories
+vpath %.cpp $(SRCDIR)
 vpath %.f90 $(SRCDIR)
 vpath %.o $(MODDIR)
 
 # Targets.
 
-all: liteQT_3d_mpi.x 
+all: liteQT_3d_mpi.x
 
-liteQT_3d_mpi.x : main3d.f90 mkl_dfti.o wannierHam3d.o green.o green_rgf.o
+invert.o : invert.cpp
+
+	$(CXX) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
+
+invert_cpp.o : invert_cpp.f90 invert.o
+
+	$(FC90) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
+
+liteQT_3d_mpi.x : main3d.f90 mkl_dfti.o wannierHam3d.o green.o invert.o invert_cpp.o green_rgf.o
 
 	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
 
@@ -51,7 +61,6 @@ clean :
 	rm -f $(MODDIR)/*.o $(MODDIR)/*.mod
 
 # implicit rules
-
 %.o : %.f90
 	$(FC90) -o $(MODDIR)/$@ $< -c $(F90_FLAGS) -I$(MODDIR) -J$(MODDIR) 
 

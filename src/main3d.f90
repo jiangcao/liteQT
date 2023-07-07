@@ -2,7 +2,7 @@ PROGRAM main
 
 USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks
 use green, only : green_calc_g, green_solve_gw_3D
-use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d, green_rgf_solve_gw_ephoton_3d_mpi_kpar, green_rgf_solve_gw_ephoton_3d_ijs
+use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d, green_rgf_solve_gw_ephoton_3d_ijs
 implicit none
 
 real(8), parameter :: pi=3.14159265359d0
