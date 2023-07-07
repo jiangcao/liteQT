@@ -4,13 +4,13 @@
 1         ! num B 
 0.0 1.0 2.0 3.0 4.0  5.0 6.0 7.0 8.0             !B values
 1   ! axis of ribbon width
-25  ! max num of OpenMP thread per MPI 
+2  ! num CPU (128)
 F   ! reorder axis
 F   ! quantum dot
 T   ! transport
-16        !length
--5.0  15.0   2000    ! emin emax num_en
-T   ! read potential from pot_dat
+20        !length (was 20)
+-5.0  15.0   20    ! emin emax num_en
+T   ! read potential from pot_dat (was T)
 -1
 20   ! num iter
 2.0   ! epsilon screening
@@ -23,9 +23,9 @@ F     ! read Coulomb blocks
 T     ! only diag
 T     ! RGF
 T    ! 2D with ky,kz
-4  4   ! num ky kz
+2  2    ! num ky kz (4, 4)
 T    ! e photon
-1.0  0.0d10
+1.0  1.0d10
 1.0  0.0   0.0
 F  ! no GW
 F  ! absorption spectrum
