@@ -488,7 +488,22 @@ subroutine p2g(p, g, NM, NX, NE, NK, local_NX, local_NE)
 
 endsubroutine p2g
 
+! calculate e-phonon self-energies in the deformation potential approximation
+subroutine calc_sigma_ephonon_DPA(nm,nx,nen,nmode,Dac,Dop,hw,en,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater)
+integer,intent(in)::nm,nx,nen
+integer,intent(in)::nmode ! number of optical phonon modes (Einstein model)
+real(8),intent(in)::Dac
+real(8),intent(in)::Dop(nmode)
+real(8),intent(in)::hw(nmode)
+real(8),intent(in)::en(nen)
+complex(8),intent(in),dimension(nm,nm,nx,nen)::G_lesser,G_greater
+complex(8),intent(inout),dimension(nm,nm,nx,nen)::Sig_retarded,Sig_lesser,Sig_greater
+!---------
+integer::ie,ix
+complex(8),allocatable::B(:,:),A(:,:) ! tmp matrix
+real(8)::nbose
 
+end subroutine calc_sigma_ephonon_DPA
 
 ! calculate e-photon self-energies in the monochromatic assumption
 subroutine calc_sigma_ephoton_monochromatic(nm,length,nen,En,nop,Mii,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,pre_fact,intensity,hw)
@@ -726,11 +741,12 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
     call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
     call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
     call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
-    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
+    call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk) 
+    call write_current_spectrum_summed_over_kz('gw_Jx',iter,cur,nen,En,nx,NB*ns,Lx*ns,nk)  
     call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
     call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
-    call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
-    call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+    call write_transmission_spectrum_k('gw_trR',iter,tr,nen,En,nk)
+    call write_transmission_spectrum_k('gw_trL',iter,tre,nen,En,nk)
     open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
     write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
     close(101)
@@ -800,7 +816,10 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       !$omp parallel default(none) private(nop) shared(iq,nopmax,nen,nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,w_lesser,w_greater,w_retarded)    
       !$omp do 
       do nop=-nopmax+nen/2,nopmax+nen/2 
-        call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+        !call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+        
+        call green_rgf_calc_w(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+        
       enddo
       !$omp end do 
       !$omp end parallel
@@ -882,8 +901,17 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
     call write_spectrum_summed_over_k('gw_SigR',iter,Sigma_r_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigL',iter,Sigma_lesser_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
     call write_spectrum_summed_over_k('gw_SigG',iter,Sigma_greater_gw,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))
+    !!!!! calculate collision integral
+    Ispec=czero
+    Itot=czero
+    do ik=1,nk
+      call calc_block_collision(sigma_lesser_gw(:,:,:,:,ik),sigma_greater_gw(:,:,:,:,ik),G_lesser(:,:,:,:,ik),G_greater(:,:,:,:,ik),nen,en,spindeg,nm,nx,Itot_ik,Ispec_ik)
+      Ispec=Ispec+Ispec_ik
+      Itot=Itot+Itot_ik
+    enddo
+    call write_spectrum('gw_Scat',iter,Ispec,nen,En,nx,NB,NS,Lx,(/1.0d0/dble(nk),1.0d0/dble(nk)/))    
     !
-    if (iter>=(niter-5)) then
+    if (iter>=(niter-15)) then
       print *, 'calc SigEPhoton'
       do ik=1,nk
         print *, ' ik=', ik,'/',nk
@@ -908,6 +936,36 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       Sigma_greater_gw(:,:,nx-ix+1,:,:)=Sigma_greater_gw(:,:,nx-2,:,:)
     enddo    
   enddo
+  !!! calculate G for the last time
+  print *, 'calc G'          
+  do ik=1,nk
+    print *, ' ik=', ik,'/',nk
+    !$omp parallel default(none) private(ie) shared(ik,nen,temp,nm,nx,en,mu,Hii,H1i,sigma_lesser_gw,sigma_greater_gw,sigma_r_gw,g_lesser,g_greater,g_r,tre,tr,cur,g_r_i1)    
+    !$omp do 
+    do ie=1,nen     
+      !if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
+      call green_RGF_RS(TEMP,nm,nx,En(ie),mu,Hii(:,:,:,ik),H1i(:,:,:,ik),sigma_lesser_gw(:,:,:,ie,ik),sigma_greater_gw(:,:,:,ie,ik),&
+                      & sigma_r_gw(:,:,:,ie,ik),g_lesser(:,:,:,ie,ik),g_greater(:,:,:,ie,ik),g_r(:,:,:,ie,ik),tr(ie,ik),&
+                      & tre(ie,ik),cur(:,:,:,ie,ik),g_r_i1(:,:,:,ie,ik)) 
+    enddo
+    !$omp end do 
+    !$omp end parallel
+    call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))      
+  enddo
+  !
+  call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
+  call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
+  call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
+  call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
+  call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
+  call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
+  call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
+  call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+  call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+  open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
+  write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
+  close(101)
+  !!!!!!!!!
   deallocate(g_r,g_lesser,g_greater,cur)
   deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
   deallocate(sigma_lesser_new,sigma_greater_new,sigma_r_new)   
@@ -916,11 +974,14 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   deallocate(W_retarded,W_lesser,W_greater)
   !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
   deallocate(Mii)
+  deallocate(Ispec,Itot)
+  deallocate(Ispec_ik,Itot_ik)
 end subroutine green_rgf_solve_gw_ephoton_3d
 
 
 
 subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs, comm_size, comm_rank, local_NE, first_local_energy)
+  use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2
   integer ( kind = 4), intent(in) :: comm_size, comm_rank, local_NE, first_local_energy
   integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
   real(8),intent(in)::en(nen),temp(2),mu(2),Lx,alpha_mix,spindeg
@@ -1240,17 +1301,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       if (i == comm_rank) then
         filename = 'gw_ldos'
         call write_spectrum_summed_over_k(filename,iter,g_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/), append)
-        filename = 'gw_ndos'
-        call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_pdos'   
-        call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+!        filename = 'gw_ndos'
+!        call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_pdos'   
+!        call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
         filename = 'gw_Jdens'
         call write_current_spectrum_summed_over_kz(filename,iter,jdens_local,local_NE,local_energies,nx*NS,NB,Lx,nk, append)        
         filename = 'gw_trL'
-        call write_transmission_spectrum_k(filename,iter,tr*spindeg,local_NE,local_energies,nk, append)
+        call write_transmission_spectrum_k(filename,iter,tr,local_NE,local_energies,nk, append)
         filename = 'gw_trR'
-        call write_transmission_spectrum_k(filename,iter,tre*spindeg,local_NE,local_energies,nk, append)
-        call write_dos_summed_over_k('gw_dos',iter,G_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx, append)
+        call write_transmission_spectrum_k(filename,iter,tre,local_NE,local_energies,nk, append)
+!        call write_dos_summed_over_k('gw_dos',iter,G_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx, append)
       endif
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
     enddo
@@ -1304,39 +1365,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     nopmax=nen/2-10
 
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
-    ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)         
-    ! do nop=-nopmax,nopmax
-    !   iop=nop+nen/2  
-    !   do iqy=1,nky        
-    !     do iqz=1,nkz
-    !       iq=iqz + (iqy-1)*nkz
-    !       do ix=1,nx
-    !         do i = 1, local_Nij
-    !           ! global_ij = i + first_local_ij - 1
-    !           ! col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
-    !           ! row = mod(global_ij - 1, nm) + 1  ! convert to 0-based indexing, mod, and convert back to 1-based indexing
-    !           ! l = max(row - ndiag, 1)
-    !           ! h = min(nm, row + ndiag)
-    !           ! if (col < l .or. col > h) then
-    !           !   continue
-    !           ! endif
-              
-    !         ! do i=1,nm      
-    !         !   l=max(i-ndiag,1)
-    !         !   h=min(nm,i+ndiag)   
-    !           do iky=1,nky
-    !             do ikz=1,nkz              
-    !               ik=ikz + (iky-1)*nkz
-    !               ikzd=ikz-iqz + nkz/2
-    !               ikyd=iky-iqy + nky/2
-    !               if (ikzd<1)   ikzd=ikzd+nkz
-    !               if (ikzd>nkz) ikzd=ikzd-nkz
-    !               if (ikyd<1)   ikyd=ikyd+nky
-    !               if (ikyd>nky) ikyd=ikyd-nky                
-    !               if (nky==1)   ikyd=1
-    !               if (nkz==1)   ikzd=1
-    !               ikd=ikzd + (ikyd-1)*nkz
-    !               do ie = max(nop+1,1),min(nen,nen+nop)
+    ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)             
     do i = 1, local_Nij
       global_ij = i + first_local_ij - 1
       col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
@@ -1362,26 +1391,36 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 if (nky==1)   ikyd=1
                 if (nkz==1)   ikzd=1
                 ikd=ikzd + (ikyd-1)*nkz
-                do nop=-nopmax,nopmax
-                  iop=nop+nen/2  
-                  do ie = max(nop+1,1),min(nen,nen+nop)
-                    ! P_lesser_by_blocks(i,l:h,ix,iop,iq) = P_lesser_by_blocks(i,l:h,ix,iop,iq) + G_lesser_by_blocks(i,l:h,ix,ie,ik) * G_greater_by_blocks(l:h,i,ix,ie-nop,ikd)
-                    ! P_greater_by_blocks(i,l:h,ix,iop,iq) = P_greater_by_blocks(i,l:h,ix,iop,iq) + G_greater_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd)        
-                    ! P_retarded_by_blocks(i,l:h,ix,iop,iq) = P_retarded_by_blocks(i,l:h,ix,iop,iq) + (G_lesser_by_blocks(i,l:h,ix,ie,ik) * conjg(G_r_by_blocks(i,l:h,ix,ie-nop,ikd)) & 
-                    !                           & + G_r_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd))
+                
+                P_lesser_by_blocks(:,iq,ix,i) = corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),G_greater_t_by_blocks(:,ikd,ix,i),method='fft')
+                
+                P_greater_by_blocks(:,iq,ix,i) = corr1d(nen,G_greater_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
+                
+                P_retarded_by_blocks(:,iq,ix,i) = corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),conjg(G_r_by_blocks(:,ikd,ix,i)),method='fft') + &
+                                                  corr1d(nen,G_r_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
+                
+                
+!                do nop=-nopmax,nopmax
+!                  iop=nop+nen/2  
+!                  do ie = max(nop+1,1),min(nen,nen+nop)
+!                    ! P_lesser_by_blocks(i,l:h,ix,iop,iq) = P_lesser_by_blocks(i,l:h,ix,iop,iq) + G_lesser_by_blocks(i,l:h,ix,ie,ik) * G_greater_by_blocks(l:h,i,ix,ie-nop,ikd)
+!                    ! P_greater_by_blocks(i,l:h,ix,iop,iq) = P_greater_by_blocks(i,l:h,ix,iop,iq) + G_greater_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd)        
+!                    ! P_retarded_by_blocks(i,l:h,ix,iop,iq) = P_retarded_by_blocks(i,l:h,ix,iop,iq) + (G_lesser_by_blocks(i,l:h,ix,ie,ik) * conjg(G_r_by_blocks(i,l:h,ix,ie-nop,ikd)) & 
+!                    !                           & + G_r_by_blocks(i,l:h,ix,ie,ik) * G_lesser_by_blocks(l:h,i,ix,ie-nop,ikd))
                     
-                    ! P_lesser_by_blocks(i,ix,iop,iq) = P_lesser_by_blocks(i,ix,iop,iq) + G_lesser_by_blocks(i,ix,ie,ik) * G_greater_t_by_blocks(i,ix,ie-nop,ikd)
-                    ! P_greater_by_blocks(i,ix,iop,iq) = P_greater_by_blocks(i,ix,iop,iq) + G_greater_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd)        
-                    ! P_retarded_by_blocks(i,ix,iop,iq) = P_retarded_by_blocks(i,ix,iop,iq) + (G_lesser_by_blocks(i,ix,ie,ik) * conjg(G_r_by_blocks(i, ix,ie-nop,ikd)) & 
-                    !                           & + G_r_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd))
+!                    ! P_lesser_by_blocks(i,ix,iop,iq) = P_lesser_by_blocks(i,ix,iop,iq) + G_lesser_by_blocks(i,ix,ie,ik) * G_greater_t_by_blocks(i,ix,ie-nop,ikd)
+!                    ! P_greater_by_blocks(i,ix,iop,iq) = P_greater_by_blocks(i,ix,iop,iq) + G_greater_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd)        
+!                    ! P_retarded_by_blocks(i,ix,iop,iq) = P_retarded_by_blocks(i,ix,iop,iq) + (G_lesser_by_blocks(i,ix,ie,ik) * conjg(G_r_by_blocks(i, ix,ie-nop,ikd)) & 
+!                    !                           & + G_r_by_blocks(i,ix,ie,ik) * G_lesser_t_by_blocks(i,ix,ie-nop,ikd))
 
-                    P_lesser_by_blocks(iop, iq, ix, i) = P_lesser_by_blocks(iop, iq, ix, i) + G_lesser_by_blocks(ie, ik, ix, i) * G_greater_t_by_blocks(ie-nop, ikd, ix, i)
-                    P_greater_by_blocks(iop, iq, ix, i) = P_greater_by_blocks(iop, iq, ix, i) + G_greater_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i)        
-                    P_retarded_by_blocks(iop, iq, ix, i) = P_retarded_by_blocks(iop, iq, ix, i) + (G_lesser_by_blocks(ie, ik, ix, i) * conjg(G_r_by_blocks(ie-nop, ikd, ix, i)) & 
-                                              & + G_r_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i))  
+!                    P_lesser_by_blocks(iop, iq, ix, i) = P_lesser_by_blocks(iop, iq, ix, i) + G_lesser_by_blocks(ie, ik, ix, i) * G_greater_t_by_blocks(ie-nop, ikd, ix, i)
+!                    P_greater_by_blocks(iop, iq, ix, i) = P_greater_by_blocks(iop, iq, ix, i) + G_greater_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i)        
+!                    P_retarded_by_blocks(iop, iq, ix, i) = P_retarded_by_blocks(iop, iq, ix, i) + (G_lesser_by_blocks(ie, ik, ix, i) * conjg(G_r_by_blocks(ie-nop, ikd, ix, i)) & 
+!                                              & + G_r_by_blocks(ie, ik, ix, i) * G_lesser_t_by_blocks(ie-nop, ikd, ix, i))  
                     
-                  enddo
-                enddo
+!                  enddo
+!                enddo
+                
               enddo
             enddo
           enddo
@@ -1437,17 +1476,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
     start = finish
 
-    do i = 0, comm_size - 1
-      if (i == comm_rank) then
-        filename = 'gw_PR'
-        call write_spectrum_summed_over_k(filename,iter,P_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_PL'
-        call write_spectrum_summed_over_k(filename,iter,P_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_PG'
-        call write_spectrum_summed_over_k(filename,iter,P_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-      endif
-      call MPI_Barrier(MPI_COMM_WORLD, ierr)
-    enddo
+!    do i = 0, comm_size - 1
+!      if (i == comm_rank) then
+!        filename = 'gw_PR'
+!        call write_spectrum_summed_over_k(filename,iter,P_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_PL'
+!        call write_spectrum_summed_over_k(filename,iter,P_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_PG'
+!        call write_spectrum_summed_over_k(filename,iter,P_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!      endif
+!      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+!    enddo
 
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
     finish = MPI_Wtime()
@@ -1468,11 +1507,16 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       !$omp do 
       do nop = max(-nopmax + nen/2, first_local_energy), min(nopmax + nen/2, first_local_energy + local_NE - 1)
         ie = nop - first_local_energy + 1
-        call green_calc_w_full( &
+!        call green_calc_w_full( &
+!          0, nm, nx, Vii(:,:,:,iq), V1i(:,:,:,iq), &
+!          p_lesser_by_energies(:,:,:,ie,iq), p_greater_by_energies(:,:,:,ie,iq), p_retarded_by_energies(:,:,:,ie,iq), &
+!          w_lesser_by_energies(:,:,:,ie,iq), w_greater_by_energies(:,:,:,ie,iq), w_retarded_by_energies(:,:,:,ie,iq))
+
+        call green_rgf_calc_w( &
           0, nm, nx, Vii(:,:,:,iq), V1i(:,:,:,iq), &
           p_lesser_by_energies(:,:,:,ie,iq), p_greater_by_energies(:,:,:,ie,iq), p_retarded_by_energies(:,:,:,ie,iq), &
-          w_lesser_by_energies(:,:,:,ie,iq), w_greater_by_energies(:,:,:,ie,iq), w_retarded_by_energies(:,:,:,ie,iq))
-        enddo
+          w_lesser_by_energies(:,:,:,ie,iq), w_greater_by_energies(:,:,:,ie,iq), w_retarded_by_energies(:,:,:,ie,iq))  
+      enddo
       !$omp end do 
       !$omp end parallel
     enddo
@@ -1486,17 +1530,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
     start = finish
 
-    do i = 0, comm_size - 1
-      if (i == comm_rank) then
-        filename = 'gw_WR'
-        call write_spectrum_summed_over_k(filename,iter,W_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_WL'
-        call write_spectrum_summed_over_k(filename,iter,W_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_WG'
-        call write_spectrum_summed_over_k(filename,iter,W_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-      endif
-      call MPI_Barrier(MPI_COMM_WORLD, ierr)
-    enddo
+!    do i = 0, comm_size - 1
+!      if (i == comm_rank) then
+!        filename = 'gw_WR'
+!        call write_spectrum_summed_over_k(filename,iter,W_retarded_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_WL'
+!        call write_spectrum_summed_over_k(filename,iter,W_lesser_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_WG'
+!        call write_spectrum_summed_over_k(filename,iter,W_greater_by_energies,local_NE,local_energies-en(nen/2),nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!      endif
+!      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+!    enddo
 
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
     finish = MPI_Wtime()
@@ -1517,28 +1561,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     Sigma_lesser_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_r_new_buf = dcmplx(0.0d0,0.0d0)
   
-    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)      
-    ! do ie=1,nen      
-    !   do iky=1,nky
-    !     do ikz=1,nkz
-    !       do nop= -nopmax,nopmax    
-    !         if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then   
-    !           ik=ikz+(iky-1)*nkz
-    !           do iqy=1,nky
-    !             do iqz=1,nkz              
-    !               iq=iqz + (iqy-1)*nkz
-    !               iop=nop+nen/2                
-    !               ikzd=ikz-iqz + nkz/2
-    !               ikyd=iky-iqy + nky/2            
-    !               if (ikzd<1)   ikzd=ikzd+nkz
-    !               if (ikzd>nkz) ikzd=ikzd-nkz
-    !               if (ikyd<1)   ikyd=ikyd+nky
-    !               if (ikyd>nky) ikyd=ikyd-nky        
-    !               if (nky==1)   ikyd=1
-    !               if (nkz==1)   ikzd=1        
-    !               ikd=ikzd + (ikyd-1)*nkz
-    !               do ix=1,nx
-    !                 do i = 1, local_Nij
+    ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)          
     do i = 1, local_Nij
       global_ij = i + first_local_ij - 1
       col = (global_ij - 1) / nm + 1  ! convert to 0-based indexing, divide, and convert back to 1-based indexing
@@ -1565,27 +1588,40 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 if (nky==1)   ikyd=1
                 if (nkz==1)   ikzd=1        
                 ikd=ikzd + (ikyd-1)*nkz
-                do nop= -nopmax,nopmax
-                  iop=nop+nen/2
-                  do ie=1,nen     
-                    if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then
-                    ! do i=1,nm
-                    !   l=max(i-ndiag,1)
-                    !   h=min(nm,i+ndiag)                                                
-                      ! sigma_lesser_new_by_blocks(i,ix,ie,ik)=Sigma_lesser_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq)
-                      ! Sigma_greater_new_by_blocks(i,ix,ie,ik)=Sigma_greater_new_by_blocks(i,ix,ie,ik)+G_greater_by_blocks(i,ix,ie-nop,ikd)*W_greater_by_blocks(i,ix,iop,iq)
-                      ! Sigma_r_new_by_blocks(i,ix,ie,ik)=Sigma_r_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq) &
-                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq) &
-                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq)  
+                
+                sigma_lesser_new_by_blocks(:, ik, ix, i) = conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i),W_lesser_by_blocks(:, iq, ix, i),method='fft')
+                
+                Sigma_greater_new_by_blocks(:, ik, ix, i) = conv1d(nen,G_greater_by_blocks(:, ikd, ix, i),W_greater_by_blocks(:, iq, ix, i),method='fft')
+                
+                Sigma_r_new_by_blocks(:, ik, ix, i)=conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method='fft') + &
+                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_lesser_by_blocks(:, iq, ix, i),method='fft') + &
+                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i) ,method='fft')
+                
+                
+!                do nop= -nopmax,nopmax
+!                  iop=nop+nen/2
+!                  do ie=1,nen     
+!                    if ((ie .gt. max(nop,1)).and.(ie .lt. (nen+nop))) then
+!                    ! do i=1,nm
+!                    !   l=max(i-ndiag,1)
+!                    !   h=min(nm,i+ndiag)                                                
+!                      ! sigma_lesser_new_by_blocks(i,ix,ie,ik)=Sigma_lesser_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq)
+!                      ! Sigma_greater_new_by_blocks(i,ix,ie,ik)=Sigma_greater_new_by_blocks(i,ix,ie,ik)+G_greater_by_blocks(i,ix,ie-nop,ikd)*W_greater_by_blocks(i,ix,iop,iq)
+!                      ! Sigma_r_new_by_blocks(i,ix,ie,ik)=Sigma_r_new_by_blocks(i,ix,ie,ik)+G_lesser_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq) &
+!                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_lesser_by_blocks(i,ix,iop,iq) &
+!                      !                                     &  +G_r_by_blocks(i,ix,ie-nop,ikd)*W_retarded_by_blocks(i,ix,iop,iq)  
                       
-                      sigma_lesser_new_by_blocks(ie, ik, ix, i)=Sigma_lesser_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i)
-                      Sigma_greater_new_by_blocks(ie, ik, ix, i)=Sigma_greater_new_by_blocks(ie, ik, ix, i)+G_greater_by_blocks(ie-nop, ikd, ix, i)*W_greater_by_blocks(iop, iq, ix, i)
-                      Sigma_r_new_by_blocks(ie, ik, ix, i)=Sigma_r_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i) &
-                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i) &
-                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i)  
-                    endif
-                  enddo
-                enddo
+!                      sigma_lesser_new_by_blocks(ie, ik, ix, i)=Sigma_lesser_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i)
+                      
+!                      Sigma_greater_new_by_blocks(ie, ik, ix, i)=Sigma_greater_new_by_blocks(ie, ik, ix, i)+G_greater_by_blocks(ie-nop, ikd, ix, i)*W_greater_by_blocks(iop, iq, ix, i)
+                      
+!                      Sigma_r_new_by_blocks(ie, ik, ix, i)=Sigma_r_new_by_blocks(ie, ik, ix, i)+G_lesser_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i) &
+!                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_lesser_by_blocks(iop, iq, ix, i) &
+!                                                          &  +G_r_by_blocks(ie-nop, ikd, ix, i)*W_retarded_by_blocks(iop, iq, ix, i)  
+!                    endif
+!                  enddo
+!                enddo
+                
               enddo
             enddo            
           enddo
@@ -1662,17 +1698,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
     start = finish
 
-    do i = 0, comm_size - 1
-      if (i == comm_rank) then
-        filename = 'gw_SigR'
-        call write_spectrum_summed_over_k(filename,iter,Sigma_r_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_SigL'
-        call write_spectrum_summed_over_k(filename,iter,Sigma_lesser_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        filename = 'gw_SigG'
-        call write_spectrum_summed_over_k(filename,iter,Sigma_greater_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-      endif
-      call MPI_Barrier(MPI_COMM_WORLD, ierr)
-    enddo
+!    do i = 0, comm_size - 1
+!      if (i == comm_rank) then
+!        filename = 'gw_SigR'
+!        call write_spectrum_summed_over_k(filename,iter,Sigma_r_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_SigL'
+!        call write_spectrum_summed_over_k(filename,iter,Sigma_lesser_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        filename = 'gw_SigG'
+!        call write_spectrum_summed_over_k(filename,iter,Sigma_greater_gw_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!      endif
+!      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+!    enddo
     
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
     finish = MPI_Wtime()
@@ -1809,17 +1845,17 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       endif
       start = finish
 
-      do i = 0, comm_size - 1
-        if (i == comm_rank) then
-          filename = 'eph_SigR_'
-          call write_spectrum_summed_over_k(filename,iter,sigma_r_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-          filename = 'eph_SigL'
-          call write_spectrum_summed_over_k(filename,iter,sigma_lesser_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-          filename = 'eph_SigG'
-          call write_spectrum_summed_over_k(filename,iter,sigma_greater_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
-        endif
-        call MPI_Barrier(MPI_COMM_WORLD, ierr)
-      enddo
+!      do i = 0, comm_size - 1
+!        if (i == comm_rank) then
+!          filename = 'eph_SigR_'
+!          call write_spectrum_summed_over_k(filename,iter,sigma_r_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!          filename = 'eph_SigL'
+!          call write_spectrum_summed_over_k(filename,iter,sigma_lesser_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!          filename = 'eph_SigG'
+!          call write_spectrum_summed_over_k(filename,iter,sigma_greater_new_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+!        endif
+!        call MPI_Barrier(MPI_COMM_WORLD, ierr)
+!      enddo
 
       call MPI_Barrier(MPI_COMM_WORLD, ierr)
       finish = MPI_Wtime()
@@ -1879,6 +1915,94 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     endif
 
   enddo
+  
+  call MPI_Barrier(MPI_COMM_WORLD, ierr)
+  start = MPI_Wtime()
+  it_start = start
+
+  if (comm_rank == 0) then
+    print *, 'Computing G ...'
+  endif      
+      
+  allocate(jdens_local(nb,nb,nx*ns,local_NE,nk))
+  allocate(tot_cur_local(nb,nb,nx*ns,nk))
+  allocate(tot_ecur_local(nb,nb,nx*ns,nk))
+  allocate(tot_cur(nb,nb,nx*ns,nk))
+  allocate(tot_ecur(nb,nb,nx*ns,nk))
+      
+  do ik=1,nk
+    if (comm_rank == 0) then
+      print *, ' ik=', ik,'/',nk
+    endif
+    !$omp parallel default(shared) private(ie)
+    !$omp do 
+    do ie=1, local_NE     
+      !if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
+      call green_RGF_RS( &
+        TEMP, nm, nx, local_energies(ie), mu, Hii(:,:,:,ik), H1i(:,:,:,ik), &
+        sigma_lesser_gw_by_energies(:,:,:,ie,ik),sigma_greater_gw_by_energies(:,:,:,ie,ik), sigma_r_gw_by_energies(:,:,:,ie,ik), &
+        g_lesser_by_energies(:,:,:,ie,ik), g_greater_by_energies(:,:,:,ie,ik), g_r_by_energies(:,:,:,ie,ik), &
+        tre(ie,ik), tr(ie,ik), cur(:,:,:,ie,ik) ) 
+    enddo
+    !$omp end do 
+    !$omp end parallel
+    call calc_block_current(Hii(:,:,:,ik),g_lesser_by_energies(:,:,:,:,ik),cur(:,:,:,:,ik),local_NE,local_energies,spindeg,nb,ns,nm,nx,tot_cur_local(:,:,:,ik),tot_ecur_local(:,:,:,ik),jdens_local(:,:,:,:,ik))    
+  enddo
+  
+
+  call MPI_Barrier(MPI_COMM_WORLD, ierr)
+  finish = MPI_Wtime()
+
+  if (comm_rank == 0) then
+    print '("G computation time = ", F0.3 ," seconds.")', finish-start
+    print *, 'Storing G ...'
+  endif
+  start = finish
+
+  do i = 0, comm_size - 1
+    if (i == comm_rank) then
+      filename = 'gw_ldos'
+      call write_spectrum_summed_over_k(filename,iter,g_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/), append)
+      filename = 'gw_ndos'
+      call write_spectrum_summed_over_k(filename,iter,g_lesser_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/), append)
+      filename = 'gw_pdos'   
+      call write_spectrum_summed_over_k(filename,iter,g_greater_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/), append)
+      filename = 'gw_Jdens'
+      call write_current_spectrum_summed_over_kz(filename,iter,jdens_local,local_NE,local_energies,nx*NS,NB,Lx,nk, append)        
+      filename = 'gw_trL'
+      call write_transmission_spectrum_k(filename,iter,tr*spindeg,local_NE,local_energies,nk, append)
+      filename = 'gw_trR'
+      call write_transmission_spectrum_k(filename,iter,tre*spindeg,local_NE,local_energies,nk, append)
+      call write_dos_summed_over_k('gw_dos',iter,G_r_by_energies,local_NE,local_energies,nk,nx,NB,NS,Lx, append)
+    endif
+    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+  enddo
+
+  ! Reduce tr and tre
+  local_sum_tr = sum(tr)
+  local_sum_tre = sum(tre)
+  call MPI_Reduce(local_sum_tr, global_sum_tr, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+  call MPI_Reduce(local_sum_tre, global_sum_tre, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+  ! Reduce current and energy-current
+  call MPI_Reduce(tot_cur_local, tot_cur, nb*nb*nx*ns*nk, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+  call MPI_Reduce(tot_ecur_local, tot_ecur, nb*nb*nx*ns*nk, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+
+  if (comm_rank == 0) then
+    open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
+    write(101,'(I4,2E16.6)') iter, global_sum_tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), global_sum_tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
+    close(101)
+    call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
+    call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)      
+  endif
+  
+  deallocate(tot_cur,tot_ecur,jdens_local,tot_cur_local,tot_ecur_local)
+
+  call MPI_Barrier(MPI_COMM_WORLD, ierr)
+  finish = MPI_Wtime()
+
+  if (comm_rank == 0) then
+    print '("G storage time = ", F0.3 ," seconds.")', finish-start    
+  endif
 
   deallocate( cur, tmp0, tmp1)
   ! deallocate(g_r_buf, g_lesser_extended_buf, g_greater_extended_buf)
@@ -1889,9 +2013,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   deallocate(P_retarded_buf, P_lesser_buf, P_greater_buf)
   deallocate(W_retarded_buf, W_lesser_buf, W_greater_buf)
   deallocate(Mii)
-  
-  deallocate(Ispec,Itot)
-  deallocate(Ispec_ik,Itot_ik)
 
   deallocate(extended_local_energies)
 end subroutine green_rgf_solve_gw_ephoton_3d_ijs
@@ -2841,7 +2962,9 @@ subroutine green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,ne
       !$omp parallel default(none) private(nop) shared(iq,nopmax,nen,nm,nx,Vii,V1i,p_lesser,p_greater,p_retarded,w_lesser,w_greater,w_retarded)    
       !$omp do 
       do nop=-nopmax+nen/2,nopmax+nen/2 
-        call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+        !call green_calc_w_full(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
+        
+        call green_rgf_calc_w(0,nm,nx,Vii(:,:,:,iq),V1i(:,:,:,iq),p_lesser(:,:,:,nop,iq),p_greater(:,:,:,nop,iq),p_retarded(:,:,:,nop,iq),w_lesser(:,:,:,nop,iq),w_greater(:,:,:,nop,iq),w_retarded(:,:,:,nop,iq))
       enddo
       !$omp end do 
       !$omp end parallel
@@ -3067,8 +3190,8 @@ subroutine green_rgf_solve_gw_1d(alpha_mix,niter,NB,NS,nm,nx,ndiag,Lx,nen,en,tem
     !
     print *, 'calc W'
     do ie=1,nen
-      if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
-      !call green_calc_w_full(0,nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
+      !if (mod(ie,100)==0) print '(I5,A,I5)',ie,'/',nen
+      call green_calc_w_full(0,nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
       !call green_rgf_calc_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie),w_lesser_i1(:,:,:,ie),w_greater_i1(:,:,:,ie),w_retarded_i1(:,:,:,ie))
       !call green_rgf_w(nm,nx,Vii,V1i,p_lesser(:,:,:,ie),p_greater(:,:,:,ie),p_retarded(:,:,:,ie),p_lesser_1i(:,:,:,ie),p_greater_1i(:,:,:,ie),p_retarded_1i(:,:,:,ie),w_lesser(:,:,:,ie),w_greater(:,:,:,ie),w_retarded(:,:,:,ie))
     enddo
@@ -3232,6 +3355,513 @@ deallocate(PR,PL,PG,WR,WL,WG)
 end subroutine green_calc_w_full
 
 
+subroutine green_rgf_calc_w(NBC,nm,nx,Vii,V1i,PL,PG,PR,WL,WG,WR,PL1i,PG1i,PR1i,WLi1,WGi1,WRi1)
+implicit none
+integer,intent(in)::nm,nx,NBC
+complex(8),intent(in),dimension(nm,nm,nx) :: Vii,V1i,PL,PG,PR ! diagonal blocks of V and P matrices
+complex(8),intent(in),dimension(nm,nm,nx),optional :: PL1i,PG1i,PR1i ! 1st off-diagonal blocks of P
+complex(8),intent(inout),dimension(nm,nm,nx) :: WL,WG,WR ! diagonal blocks of W 
+complex(8),intent(inout),dimension(nm,nm,nx),optional :: WLi1,WGi1,WRi1 ! 1st off-diagonal blocks of W
+! --------
+complex(8)::A(nm,nm),B(nm,nm),C(nm,nm),D(nm,nm),sig(nm,nm),AL(nm,nm),AG(nm,nm),BL(nm,nm),BG(nm,nm)
+complex(8),allocatable,dimension(:,:,:)::S,M,LL,LL1i,LG,LG1i,VV,M1i,Mi1,S1i,Si1,WRi1_,WLi1_,WGi1_,PR1i_,PL1i_,PG1i_
+complex(8),allocatable,dimension(:,:,:)::xlr,wlr,wln,wlp,xR
+complex(8),dimension(:,:),allocatable::V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,&
+    PL00,PL01,PL10,PG00,PG01,PG10,LL00,LL01,LL10,LG00,LG01,LG10
+complex(8),dimension(:,:),allocatable::VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,&
+    MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N
+complex(8),dimension(:,:),allocatable::dM11,xR11,dLL11,dLG11,dV11
+complex(8),dimension(:,:),allocatable::dMnn,xRnn,dLLnn,dLGnn,dVnn
+integer::i,NL,NR,NT,LBsize,RBsize
+integer::ix
+real(8)::condL,condR
+NL=nm ! left contact block size
+NR=nm ! right contact block size
+NT=nm*nx! total size
+!print *,' RGF W'
+allocate(VV(nm,nm,nx))
+VV = Vii
+allocate(M(nm,nm,nx))
+allocate(M1i(nm,nm,nx))
+allocate(Mi1(nm,nm,nx))
+allocate(S(nm,nm,nx))
+allocate(S1i(nm,nm,nx))
+allocate(Si1(nm,nm,nx))
+allocate(LL(nm,nm,nx))
+allocate(LG(nm,nm,nx))
+allocate(LL1i(nm,nm,nx))
+allocate(LG1i(nm,nm,nx))
+allocate(PR1i_(nm,nm,nx))
+allocate(PL1i_(nm,nm,nx))
+allocate(PG1i_(nm,nm,nx))
+if (present(PR1i)) then
+  PR1i_=PR1i
+  PL1i_=PL1i
+  PG1i_=PG1i
+else
+  PR1i_=czero
+  PL1i_=czero
+  PG1i_=czero
+endif
+!! S = V P^r
+! Si,i = Vi,i Pi,i + Vi,i+1 Pi+1,i + Vi,i-1 Pi-1,i
+do ix=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,ix),nm,PR(:,:,ix),nm,czero,S(:,:,ix),nm)
+  if (present(PR1i)) then
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
+    if (ix==1) then
+      call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix),nm,PR1i(:,:,ix),nm,cone,S(:,:,ix),nm) 
+    else
+      call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,ix-1),nm,PR1i(:,:,ix-1),nm,cone,S(:,:,ix),nm) 
+    endif
+  endif
+enddo
+!
+do i=1,nx-1
+  ! Si+1,i = Vi+1,i+1 Pi+1,i + Vi+1,i Pi,i
+  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i),nm,czero,S1i(:,:,i),nm) 
+  if (present(PR1i)) then
+     call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i+1),nm,PR1i(:,:,i),nm,cone,S1i(:,:,i),nm) 
+  endif
+  !!
+  ! Si,i+1 = Vi,i Pi,i+1 + Vi,i+1 Pi+1,i+1
+  call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PR(:,:,i+1),nm,czero,Si1(:,:,i),nm)   
+  if (present(PR1i)) then
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PR1i(:,:,i),nm,cone,Si1(:,:,i),nm)
+  endif
+  !!  
+enddo
+Si1(:,:,nx)=Si1(:,:,nx-1)
+S1i(:,:,nx)=S1i(:,:,nx-1)
+M   = -S
+M1i = -S1i
+Mi1 = -Si1
+do ix=1,nx
+  do i=1,nm
+      M(i,i,ix) = 1.0d0 + M(i,i,ix)
+  enddo
+enddo
+deallocate(S,S1i,Si1)
+!! LL=V P^l V
+!! LLi,i
+do i=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL(:,:,i),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,czero,LL(:,:,i),nm)
+  !
+  if (i<nx) then
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL(:,:,i+1),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
+  endif
+  if (i>1) then
+    call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i-1),nm,PL(:,:,i-1),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,i-1),nm,cone,LL(:,:,i),nm)
+  endif
+  !
+!  if (present(PL1i)) then
+!    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
+!    !
+!    call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,i),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL(:,:,i),nm)
+!    !
+!    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
+!    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LL(:,:,i),nm)      
+!    !
+!    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PL1i(:,:,max(i-1,1)),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LL(:,:,i),nm)
+!  endif
+enddo
+!! LLi+1,i = Vi+1,i P^li,i Vi,i + Vi+1,i+1 P^li+1,i+1 Vi+1,i
+do i=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i),nm,PL(:,:,i),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,czero,LL1i(:,:,i),nm)
+  if (i<nx) then
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i+1),nm,PL(:,:,i+1),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LL1i(:,:,i),nm)
+  endif
+enddo
+!! LG=V P^g V'    
+!! LGi,i
+do i=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG(:,:,i),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,czero,LG(:,:,i),nm)
+  !
+  if (i<nx) then
+    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG(:,:,i+1),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
+  endif
+  if (i>1) then    
+    call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i-1),nm,PG(:,:,i-1),nm,czero,A,nm)
+    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,i-1),nm,cone,LG(:,:,i),nm)
+  endif
+  !
+!  if (present(PG1i)) then
+!    call zgemm('c','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
+!    !
+!    call zgemm('n','c',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,i),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG(:,:,i),nm)
+!    !
+!    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
+!    call zgemm('n','c',nm,nm,nm,cone,A,nm,V1i(:,:,max(i-1,1)),nm,cone,LG(:,:,i),nm)
+!    !
+!    call zgemm('n','c',nm,nm,nm,cone,V1i(:,:,max(i-1,1)),nm,PG1i(:,:,max(i-1,1)),nm,czero,A,nm)
+!    call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,cone,LG(:,:,i),nm)
+!  endif
+enddo
+!! LGi+1,i = Vi+1,i P^gi,i Vi,i + Vi+1,i+1 P^gi+1,i+1 Vi+1,i 
+do i=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,V1i(:,:,i),nm,PG(:,:,i),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,Vii(:,:,i),nm,czero,LG1i(:,:,i),nm)
+  if (i<nx) then
+    call zgemm('n','n',nm,nm,nm,cone,Vii(:,:,i+1),nm,PG(:,:,i+1),nm,czero,A,nm)
+    call zgemm('n','n',nm,nm,nm,cone,A,nm,V1i(:,:,i),nm,cone,LG1i(:,:,i),nm)
+  endif
+enddo
+!
+if (NBC>0) then ! apply open-boundary correction to all matrices
+  !
+  LBsize=NL*NBC
+  RBsize=NR*NBC
+  !
+  allocate(V00 (LBsize,LBsize))
+  allocate(V01 (LBsize,LBsize))
+  allocate(V10 (LBsize,LBsize))
+  allocate(M00 (LBsize,LBsize))
+  allocate(M01 (LBsize,LBsize))
+  allocate(M10 (LBsize,LBsize))
+  allocate(PR00(LBsize,LBsize))
+  allocate(PR01(LBsize,LBsize))
+  allocate(PR10(LBsize,LBsize))
+  allocate(PG00(LBsize,LBsize))
+  allocate(PG01(LBsize,LBsize))
+  allocate(PG10(LBsize,LBsize))
+  allocate(PL00(LBsize,LBsize))
+  allocate(PL01(LBsize,LBsize))
+  allocate(PL10(LBsize,LBsize))
+  allocate(LG00(LBsize,LBsize))
+  allocate(LG01(LBsize,LBsize))
+  allocate(LG10(LBsize,LBsize))
+  allocate(LL00(LBsize,LBsize))
+  allocate(LL01(LBsize,LBsize))
+  allocate(LL10(LBsize,LBsize))
+  allocate(dM11(LBsize,LBsize))
+  allocate(xR11(LBsize,LBsize))
+  allocate(dV11(LBsize,LBsize))
+  allocate(dLL11(LBsize,LBsize))
+  allocate(dLG11(LBsize,LBsize))
+  !  
+  allocate(VNN  (RBsize,RBsize))
+  allocate(VNN1 (RBsize,RBsize))
+  allocate(Vn1n (RBsize,RBsize))
+  allocate(Mnn  (RBsize,RBsize))
+  allocate(Mnn1 (RBsize,RBsize))
+  allocate(Mn1n (RBsize,RBsize))
+  allocate(PRnn (RBsize,RBsize))
+  allocate(PRnn1(RBsize,RBsize))
+  allocate(PRn1n(RBsize,RBsize))
+  allocate(PGnn (RBsize,RBsize))
+  allocate(PGnn1(RBsize,RBsize))
+  allocate(PGn1n(RBsize,RBsize))
+  allocate(PLnn (RBsize,RBsize))
+  allocate(PLnn1(RBsize,RBsize))
+  allocate(PLn1n(RBsize,RBsize))
+  allocate(LGnn (RBsize,RBsize))
+  allocate(LGnn1(RBsize,RBsize))
+  allocate(LGn1n(RBsize,RBsize))
+  allocate(LLnn (RBsize,RBsize))
+  allocate(LLnn1(RBsize,RBsize))
+  allocate(LLn1n(RBsize,RBsize))
+  allocate(dMnn (RBsize,RBsize))
+  allocate(xRnn (RBsize,RBsize))
+  allocate(dLLnn(RBsize,RBsize))
+  allocate(dLGnn(RBsize,RBsize))
+  allocate(dVnn(RBsize,RBsize))
+  ! left OBC
+  call get_OBC_blocks_for_W(NL,Vii(:,:,1),V1i(:,:,1),PR(:,:,1),PR1i_(:,:,1),&
+      PL(:,:,1),PL1i_(:,:,1),PG(:,:,1),PG1i_(:,:,1),NBC,&
+      V00,V01,V10,PR00,PR01,PR10,M00,M01,M10,PL00,PL01,PL10,PG00,PG01,PG10,&
+      LL00,LL01,LL10,LG00,LG01,LG10)
+  ! right OBC  
+  call get_OBC_blocks_for_W(NR,Vii(:,:,nx),transpose(conjg(V1i(:,:,nx))),PR(:,:,nx),&
+      transpose(PR1i_(:,:,nx)),PL(:,:,nx),-transpose(conjg(PL1i_(:,:,nx))),&
+      PG(:,:,nx),-transpose(conjg(PG1i_(:,:,nx))),NBC,&
+      VNN,VNN1,VN1N,PRNN,PRNN1,PRN1N,MNN,MNN1,MN1N,PLNN,PLNN1,PLN1N,PGNN,PGNN1,PGN1N,&
+      LLNN,LLNN1,LLN1N,LGNN,LGNN1,LGN1N)
+  !
+  ! Correct first and last block of M to account for elements in the contacts
+  M(:,:,1)=M(:,:,1) - matmul(V10,PR01)
+  M(:,:,nx)=M(:,:,nx) - matmul(VNN1,PRN1N)
+  ! 
+  ! Correct first and last block of LL to account for elements in the contacts
+  LL(:,:,1)=LL(:,:,1) + matmul(matmul(V10,PL00),V01) + &
+    matmul(matmul(V10,PL01),V00) + matmul(matmul(V00,PL10),V01)
+  !  
+  LL(:,:,nx)=LL(:,:,nx) + &
+    matmul(matmul(VNN,PLNN1),VN1N) + matmul(matmul(VNN1,PLN1N),VNN) + &
+    matmul(matmul(VNN1,PLNN),VN1N)
+  !  
+  ! Correct first and last block of LG to account for elements in the contacts
+  LG(:,:,1)=LG(:,:,1) + matmul(matmul(V10,PG00),V01) + &
+    matmul(matmul(V10,PG01),V00) + matmul(matmul(V00,PG10),V01)
+  LG(:,:,nx)=LG(:,:,nx) + &
+    matmul(matmul(VNN,PGNN1),VN1N) + matmul(matmul(VNN1,PGN1N),VNN) + matmul(matmul(VNN1,PGNN),VN1N)
+  !  
+  ! WR/WL/WG OBC Left
+  call open_boundary_conditions(NL,M00,M10,M01,V01,xR11,dM11,dV11,condL)
+  ! WR/WL/WG OBC right
+  call open_boundary_conditions(NR,MNN,MNN1,MN1N,VN1N,xRNN,dMNN,dVNN,condR)
+  !
+  if (condL<1.0d-6) then   
+    !
+    call get_dL_OBC_for_W(NL,xR11,LL00,LL01,LG00,LG01,M10,'L', dLL11,dLG11)
+    !
+    M(:,:,1)=M(:,:,1) - dM11
+    VV(:,:,1)=VV(:,:,1) - dV11    
+    LL(:,:,1)=LL(:,:,1) + dLL11
+    LG(:,:,1)=LG(:,:,1) + dLG11    
+  endif
+  if (condR<1.0d-6) then    
+    !
+    call get_dL_OBC_for_W(NR,xRNN,LLNN,LLN1N,LGNN,LGN1N,MNN1,'R', dLLNN,dLGNN)
+    !
+    M(:,:,nx)=M(:,:,nx) - dMNN
+    VV(:,:,nx)=VV(:,:,nx)- dVNN
+    LL(:,:,nx)=LL(:,:,nx) + dLLNN
+    LG(:,:,nx)=LG(:,:,nx) + dLGNN    
+  endif
+  !
+  deallocate(V00,V01,V10)
+  deallocate(M00,M01,M10)
+  deallocate(PR00,PR01,PR10)
+  deallocate(PG00,PG01,PG10)
+  deallocate(PL00,PL01,PL10)
+  deallocate(LG00,LG01,LG10)
+  deallocate(LL00,LL01,LL10)
+  deallocate(VNN,VNN1,Vn1n)
+  deallocate(Mnn,Mnn1,Mn1n)
+  deallocate(PRnn,PRnn1,PRn1n)
+  deallocate(PGnn,PGnn1,PGn1n)
+  deallocate(PLnn,PLnn1,PLn1n)
+  deallocate(LGnn,LGnn1,LGn1n)
+  deallocate(LLnn,LLnn1,LLn1n)
+  deallocate(dM11,xR11,dLL11,dLG11,dV11)
+  deallocate(dMnn,xRnn,dLLnn,dLGnn,dVnn)
+  !
+end if 
+!
+allocate(xlr(nm,nm,nx)) ! left-connected xR
+allocate(wlr(nm,nm,nx)) ! left-connected Wr
+allocate(wln(nm,nm,nx)) ! left-connected W<
+allocate(wlp(nm,nm,nx)) ! left-connected W>
+allocate(xR(nm,nm,nx))  ! full xR
+allocate(WRi1_(nm,nm,nx)) ! off-diagonal block of WR
+!print*,' first pass, from right to left ... '
+A=M(:,:,nx)
+call invert(A,nm)
+xlr(:,:,nx)=A
+call zgemm('n','n',nm,nm,nm,cone,A,nm,VV(:,:,nx),nm,czero,Wlr(:,:,nx),nm) 
+!
+call zgemm('n','n',nm,nm,nm,cone,A,nm,LL(:,:,nx),nm,czero,B,nm) 
+call zgemm('n','c',nm,nm,nm,cone,B,nm,A,nm,czero,Wln(:,:,nx),nm) 
+!
+call zgemm('n','n',nm,nm,nm,cone,A,nm,LG(:,:,nx),nm,czero,B,nm) 
+call zgemm('n','c',nm,nm,nm,cone,B,nm,A,nm,czero,Wlp(:,:,nx),nm) 
+!
+do ix=nx-1,1,-1
+  call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix),nm,xlr(:,:,ix+1),nm,czero,B,nm) ! B -> Mn,n+1 xlr -> MxR
+  call zgemm('n','n',nm,nm,nm,cone,B,nm,M1i(:,:,ix),nm,czero,C,nm)             ! C -> Mn,n+1 xlr Mn+1,n
+  A = M(:,:,ix) - C
+  call invert(A,nm) ! A -> xlr
+  xlr(:,:,ix)=A     
+  call zgemm('n','n',nm,nm,nm,cone,B,nm,V1i(:,:,ix),nm,czero,C,nm) ! C -> MxR Vn+1,n  
+  D=VV(:,:,ix) - C                                                 ! D -> Vn,n - Mn,n+1 xlr Vn+1,n
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,D,nm,czero,Wlr(:,:,ix),nm) ! xlr ( Vn,n - Mn,n+1 xlr Vn+1,n )
+  !
+!  !AL=MxR*LL10  
+!  !AG=MxR*LG10          
+!  call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix),nm,xlr(:,:,ix+1),nm,czero,B,nm) ! B -> Mn,n+1 xlr -> MxR
+!  AL=matmul(B, LL1i(:,:,ix))
+!  AG=matmul(B, LG1i(:,:,ix))
+!  !  
+!  call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix),nm,wln(:,:,ix+1),nm,czero,B,nm) 
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,M1i(:,:,ix),nm,czero,sig,nm)   ! sig -> Mn,n+1 w<n+1 Mn+1,n
+!  C = LL(:,:,ix) + sig - (AL-transpose(conjg(AL)))
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,C,nm,czero,B,nm) 
+!  call zgemm('n','c',nm,nm,nm,cone,B,nm,A,nm,czero,wln(:,:,ix),nm)       
+!  !
+!  call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix),nm,wlp(:,:,ix+1),nm,czero,B,nm) 
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,M1i(:,:,ix),nm,czero,sig,nm)   ! sig -> Mn,n+1 w>n+1 Mn+1,n    
+!  C = LG(:,:,ix) + sig - (AG-transpose(conjg(AG)))
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,C,nm,czero,B,nm) 
+!  call zgemm('n','c',nm,nm,nm,cone,B,nm,A,nm,czero,wlp(:,:,ix),nm)     
+  !  
+enddo
+!print*,' second pass, from left to right ... '
+WR(:,:,1)=Wlr(:,:,1)
+call zgemm('n','t',nm,nm,nm,cone,WR(:,:,1),nm,M1i(:,:,1),nm,czero,B,nm)
+C = transpose((V1i(:,:,1))) - B
+call zgemm('n','t',nm,nm,nm,cone,C,nm,xlr(:,:,2),nm,czero,B,nm)  ! B -> (V12 - WR1 M12) xlr2
+WRi1_(:,:,1) = B
+XR(:,:,1)=xlr(:,:,1)
+!WL(:,:,1)=Wln(:,:,1)
+!WG(:,:,1)=Wlp(:,:,1)
+do ix=2,nx
+  call zgemm('n','n',nm,nm,nm,cone,xlr(:,:,ix),nm,M1i(:,:,ix-1),nm,czero,B,nm) ! B -> xlr1 * M10
+  call zgemm('n','n',nm,nm,nm,cone,B,nm,WRi1_(:,:,ix-1),nm,czero,C,nm)         ! C -> xlr1 * M10 WR0 M01 xlr1
+  WR(:,:,ix)=Wlr(:,:,ix)  - C  
+  call zgemm('n','n',nm,nm,nm,cone,B,nm,XR(:,:,ix-1),nm,czero,A,nm)            ! A -> xlr1 * M10 * XR0 
+  call zgemm('n','n',nm,nm,nm,cone,Mi1(:,:,ix-1),nm,xlr(:,:,ix),nm,czero,C,nm) ! C -> M01 * xlr1
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,C,nm,czero,D,nm)                       ! D -> xlr1 * M10 * XR0 * M01 * xlr1
+  XR(:,:,ix)=xlr(:,:,ix)  + D
+  !   
+!  ! AL=xlr1 LL10 XR0' M01 xlr1'
+!  ! BL=xlr1 M10 XR0 M01 wln1  
+!  call zgemm('c','n',nm,nm,nm,cone,xR(:,:,ix-1),nm,Mi1(:,:,ix-1),nm,czero,D,nm)   ! D -> XR0' M01
+!  call zgemm('n','c',nm,nm,nm,cone,D,nm,xlr(:,:,ix),nm,czero,A,nm)    ! A -> XR0' M01 xlr1'
+!  !
+!  AL = matmul( matmul(xlr(:,:,ix), LL1i(:,:,ix-1)), A )
+!  AG = matmul( matmul(xlr(:,:,ix), LG1i(:,:,ix-1)), A )
+!  !
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,xR(:,:,ix-1),nm,czero,D,nm)   ! D -> xlr1 * M10 * XR0
+!  call zgemm('n','n',nm,nm,nm,cone,D,nm,Mi1(:,:,ix-1),nm,czero,A,nm)  ! A -> xlr1 * M10 * XR0 * M01 
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,wln(:,:,ix),nm,czero,BL,nm)   ! BL-> xlr1 * M10 * XR0 * M01 * wln1
+!  !
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,WL(:,:,ix-1),nm,czero,A,nm)            ! A -> xlr1 M10 WL0
+!  call zgemm('n','c',nm,nm,nm,cone,Mi1(:,:,ix-1),nm,xlr(:,:,ix),nm,czero,C,nm) ! C -> M01 xlr1'
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,C,nm,czero,D,nm)            ! D -> xlr1 M10 WL0 M01 xlr1'
+!  WL(:,:,ix) = wln(:,:,ix) !+ D + (BL-transpose(conjg(BL))) - (AL-transpose(conjg(AL)))
+!  !
+!  ! AG=xlr1 LG10 XR0' M01 xlr1'
+!  ! BG=xlr1 M10 XR0 M01 wlp1    
+!  !
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,xR(:,:,ix-1),nm,czero,D,nm)    ! D -> xlr1 * M10 * XR0 
+!  call zgemm('n','n',nm,nm,nm,cone,D,nm,Mi1(:,:,ix-1),nm,czero,A,nm)   ! A -> xlr1 * M10 * XR0 * M01
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,wlp(:,:,ix),nm,czero,BG,nm)    ! BG-> xlr1 * M10 * XR0 * M01 * wlp1
+!  !
+!  call zgemm('n','n',nm,nm,nm,cone,B,nm,WG(:,:,ix-1),nm,czero,A,nm)    ! A -> xlr1 * M10 * WG0 
+!  call zgemm('n','n',nm,nm,nm,cone,A,nm,C,nm,czero,D,nm)               ! D -> xlr1 * M10 * WG0 * M01 xlr1' 
+!  WG(:,:,ix) = wlp(:,:,ix) !+ D + (BG-transpose(conjg(BG))) - (AG-transpose(conjg(AG)))
+  !
+  if (ix<nx) then
+    call zgemm('n','t',nm,nm,nm,cone,WR(:,:,ix),nm,M1i(:,:,ix),nm,czero,B,nm)
+    C = transpose((V1i(:,:,ix))) - B
+    call zgemm('n','t',nm,nm,nm,cone,C,nm,xlr(:,:,ix+1),nm,czero,B,nm)  ! B -> (V12 - WR1 M12) xlr2
+    WRi1_(:,:,ix) = B        
+  endif
+  !     
+enddo
+!
+if (present(WRi1)) then
+  WRi1= WRi1_
+end if
+!
+WRi1_ = dcmplx(0.0d0*dble(WRi1_),aimag(WRi1_))
+do ix=1,nx
+  call zgemm('n','n',nm,nm,nm,cone,WR(:,:,ix),nm,PL(:,:,ix),nm,czero,A,nm)
+  call zgemm('n','c',nm,nm,nm,cone,A,nm,WR(:,:,ix),nm,czero,B,nm)
+  if (ix<nx) then
+    call zgemm('n','n',nm,nm,nm,cone,WRi1_(:,:,ix),nm,PL(:,:,ix+1),nm,czero,A,nm)
+    call zgemm('n','t',nm,nm,nm,cone,A,nm,-WRi1_(:,:,ix),nm,cone,B,nm)
+  else
+    call zgemm('n','n',nm,nm,nm,cone,WRi1_(:,:,ix-1),nm,PL(:,:,nx),nm,czero,A,nm)
+    call zgemm('n','t',nm,nm,nm,cone,A,nm,-WRi1_(:,:,ix-1),nm,cone,B,nm)  
+  endif
+  call zgemm('t','n',nm,nm,nm,cone,WRi1_(:,:,max(ix-1,1)),nm,PL(:,:,max(ix-1,1)),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,-WRi1_(:,:,max(ix-1,1)),nm,cone,B,nm)
+  WL(:,:,ix)=B
+  call zgemm('n','n',nm,nm,nm,cone,WR(:,:,ix),nm,PG(:,:,ix),nm,czero,A,nm)
+  call zgemm('n','c',nm,nm,nm,cone,A,nm,WR(:,:,ix),nm,czero,B,nm)
+  if (ix<nx) then
+    call zgemm('n','n',nm,nm,nm,cone,WRi1_(:,:,ix),nm,PG(:,:,ix+1),nm,czero,A,nm)
+    call zgemm('n','t',nm,nm,nm,cone,A,nm,-WRi1_(:,:,ix),nm,cone,B,nm)
+  else
+    call zgemm('n','n',nm,nm,nm,cone,WRi1_(:,:,ix-1),nm,PG(:,:,nx),nm,czero,A,nm)
+    call zgemm('n','t',nm,nm,nm,cone,A,nm,-WRi1_(:,:,ix-1),nm,cone,B,nm)  
+  endif
+  call zgemm('t','n',nm,nm,nm,cone,WRi1_(:,:,max(ix-1,1)),nm,PG(:,:,max(ix-1,1)),nm,czero,A,nm)
+  call zgemm('n','n',nm,nm,nm,cone,A,nm,-WRi1_(:,:,max(ix-1,1)),nm,cone,B,nm)
+  WG(:,:,ix)=B
+enddo
+!
+deallocate(M,M1i,Mi1,LL,LG,VV,LL1i,LG1i)
+deallocate(wln,wlp,wlr,xlr,Xr,WRi1_)
+deallocate(PR1i_,PL1i_,PG1i_)
+end subroutine green_rgf_calc_w
+
+
+
+
+!subroutine green_calc_w_banded(NBC,nm,nx,Vii,V1i,PLii,PGii,PRii,WLii,WGii,WRii)
+!integer,intent(in)::nm,nx,NBC
+!!complex(8),intent(in),dimension(nm*nx,nm*nx) :: V
+!complex(8),intent(in),dimension(nm,nm,nx) :: PLii,PGii,PRii
+!complex(8),intent(in),dimension(nm,nm,nx) :: Vii, V1i
+!!complex(8),intent(in),dimension(nm,nm,nx) :: PL1i,PG1i,PR1i
+!complex(8),intent(inout),dimension(nm,nm,nx) :: WLii,WGii,WRii!,WLi1,WGi1,WRi1
+!! --------- local
+!complex(8),allocatable,dimension(:,:)::B,M,V, A
+!complex(8),allocatable,dimension(:,:)::PL,PR,PG, WL,WR,WG
+!integer,allocatable::IPIV(:)
+!integer::i,NT, LDAB, info, LDB,NRHS
+!NT=nm*nx! total size
+!LDAB= 2*nm*2+nm*2+1
+!LDB=NT
+!NRHS=NT
+!allocate(IPIV(NT))
+!allocate(V(NT,NT))
+!allocate(PR(NT,NT))
+!allocate(PL(NT,NT))
+!allocate(PG(NT,NT))
+!allocate(WR(NT,NT))
+!allocate(WL(NT,NT))
+!allocate(WG(NT,NT))
+!allocate(B(NT,NT))
+!allocate(M(NT,NT))  
+!PR=czero
+!PL=czero
+!PG=czero
+!V=czero
+!call block2full(Vii,V,nm,nx)  
+!call block2full(V1i,V,nm,nx,1)  
+!call block2full(PRii,PR,nm,nx)  
+!call block2full(PLii,PL,nm,nx)  
+!call block2full(PGii,PG,nm,nx)  
+!!! M = I - V P^r
+!call zgemm('n','n',NT,NT,NT,-cone,V,NT,PR,NT,czero,M,NT)
+!!
+!do i=1,NT
+!   M(i,i) = 1.0d0 + M(i,i)
+!enddo  
+!! put M into band storage 
+!allocate(A(LDAB,NT))
+!do i=1,NT
+!  A(max(i-nm*2,1)-i+nm*4:min(i+nm*2,NT)-i+nm*4,i) = M(max(i-nm*2,1):min(i+nm*2,NT),i)
+!enddo
+!M=czero
+!do i=1,NT
+!   M(i,i) = 1.0d0 
+!enddo    
+!call ZGBSV( NT, nm*2, nm*2, NT, A, LDAB, IPIV, M, LDB, info )
+!if (info .ne. 0) then
+!  print*,'SEVERE warning: ZGBSV failed, info=',info
+!  M=0.0d0
+!endif  
+!deallocate(A,IPIV)
+!! M contains (I - V P^r)^-1
+!!!!! calculate W^r = (I - V P^r)^-1 V      
+!call zgemm('n','n',NT,NT,NT,cone,M,NT,V,NT,czero,WR,NT)           
+!! calculate W^< and W^> = W^r P^<> W^r dagger
+!call zgemm('n','n',NT,NT,NT,cone,WR,NT,PL,NT,czero,B,NT) 
+!call zgemm('n','c',NT,NT,NT,cone,B,NT,WR,NT,czero,WL,NT) 
+!call zgemm('n','n',NT,NT,NT,cone,WR,NT,PG,NT,czero,B,NT) 
+!call zgemm('n','c',NT,NT,NT,cone,B,NT,WR,NT,czero,WG,NT)  
+!call full2block(WR,WRii,nm,nx)
+!call full2block(WL,WLii,nm,nx)
+!call full2block(WG,WGii,nm,nx)
+!deallocate(B,M,V)  
+!deallocate(PR,PL,PG,WR,WL,WG)
+!end subroutine green_calc_w_banded
 
 
 subroutine identity(A,n)
@@ -3355,10 +3985,8 @@ subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph
     A=-(sigmar-transpose(conjg(sigmar)))*(ferm((E-mur)/(BOLTZ*TEMPl))-1.0d0)
     call zgemm('n','n',nm,nm,nm,alpha,A,nm,Gn,nm,beta,C,nm)
     tim=0.0d0
-    do i=1,nm
-        do j=i,i!1,nm
-            tim=tim-dble(B(i,j)-C(i,j))
-        enddo
+    do i=1,nm        
+      tim=tim-dble(B(i,i)-C(i,i))        
     enddo
     tr=tim
     ! transmission
@@ -3452,7 +4080,7 @@ subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph
     call zgemm('n','n',nm,nm,nm,alpha,A,nm,Gn,nm,beta,C,nm)
     tim=0.0d0
     do i=1,nm
-        tim=tim+dble(B(i,i)-C(i,i))
+      tim=tim+dble(B(i,i)-C(i,i))
     enddo
     tre=tim
     deallocate(Gl)
@@ -3809,7 +4437,9 @@ subroutine sancho(nm,E,S00,H00,H10,G00,GBB)
         END IF
         IF (i .EQ. nmax) THEN
             write(*,*) 'SEVERE warning: nmax reached in sancho!!!',error
-            call abort
+            !call abort
+            H_SS=H00
+            H_BB=H00
         END IF
     enddo
     G00 = z*S00 - H_SS
