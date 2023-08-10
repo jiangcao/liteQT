@@ -1392,11 +1392,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 if (nkz==1)   ikzd=1
                 ikd=ikzd + (ikyd-1)*nkz
                 
-                P_lesser_by_blocks(:,iq,ix,i) = corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),G_greater_t_by_blocks(:,ikd,ix,i),method='fft')
+                P_lesser_by_blocks(:,iq,ix,i) = P_lesser_by_blocks(:,iq,ix,i) + &
+                                                corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),G_greater_t_by_blocks(:,ikd,ix,i),method='fft')
                 
-                P_greater_by_blocks(:,iq,ix,i) = corr1d(nen,G_greater_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
+                P_greater_by_blocks(:,iq,ix,i) = P_greater_by_blocks(:,iq,ix,i) + & 
+                                                corr1d(nen,G_greater_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
                 
-                P_retarded_by_blocks(:,iq,ix,i) = corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),conjg(G_r_by_blocks(:,ikd,ix,i)),method='fft') + &
+                P_retarded_by_blocks(:,iq,ix,i) = P_retarded_by_blocks(:,iq,ix,i) + & 
+                                                  corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),conjg(G_r_by_blocks(:,ikd,ix,i)),method='fft') + &
                                                   corr1d(nen,G_r_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
                 
                 
@@ -1589,11 +1592,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 if (nkz==1)   ikzd=1        
                 ikd=ikzd + (ikyd-1)*nkz
                 
-                sigma_lesser_new_by_blocks(:, ik, ix, i) = conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i),W_lesser_by_blocks(:, iq, ix, i),method='fft')
+                sigma_lesser_new_by_blocks(:, ik, ix, i) = sigma_lesser_new_by_blocks(:, ik, ix, i) + &
+                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i),W_lesser_by_blocks(:, iq, ix, i),method='fft')
                 
-                Sigma_greater_new_by_blocks(:, ik, ix, i) = conv1d(nen,G_greater_by_blocks(:, ikd, ix, i),W_greater_by_blocks(:, iq, ix, i),method='fft')
+                Sigma_greater_new_by_blocks(:, ik, ix, i) = Sigma_greater_new_by_blocks(:, ik, ix, i) + &
+                                                    conv1d(nen,G_greater_by_blocks(:, ikd, ix, i),W_greater_by_blocks(:, iq, ix, i),method='fft')
                 
-                Sigma_r_new_by_blocks(:, ik, ix, i)=conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method='fft') + &
+                Sigma_r_new_by_blocks(:, ik, ix, i) = Sigma_r_new_by_blocks(:, ik, ix, i) + & 
+                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method='fft') + &
                                                     conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_lesser_by_blocks(:, iq, ix, i),method='fft') + &
                                                     conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i) ,method='fft')
                 
