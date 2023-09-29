@@ -1,6 +1,27 @@
-!!!!!!!!!!!!!!!! AUTHOR: Jiang Cao
-!!!!!!!!!!!!!!!! DATE: 08/2023
-
+! Copyright (c) 2023 Jiang Cao, ETH Zurich 
+! All rights reserved.
+!
+! Redistribution and use in source and binary forms, with or without
+! modification, are permitted provided that the following conditions are met:
+!
+! 1. Redistributions of source code must retain the above copyright notice,
+!    this list of conditions and the following disclaimer.
+! 2. Redistributions in binary form must reproduce the above copyright notice,
+!    this list of conditions and the following disclaimer in the documentation
+!    and/or other materials provided with the distribution.
+!
+! THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+! AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+! IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+! ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+! LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+! CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+! SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+! INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+! CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+! ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+! POSSIBILITY OF SUCH DAMAGE. 
+!
 module fft_mod
 
 implicit none 
@@ -10,9 +31,9 @@ private
 public :: corr1d, conv1d, do_mkl_dfti_conv
 public :: corr1d2, conv1d2
 
-complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
-complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
-complex(8), parameter :: c1i  = cmplx(0.0d0,1.0d0)
+complex(8), parameter :: cone = dcmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = dcmplx(0.0d0,0.0d0)
+complex(8), parameter :: c1i  = dcmplx(0.0d0,1.0d0)
 REAL(8), PARAMETER :: pi = 3.14159265359d0
 REAL(8), PARAMETER :: tpi = 3.14159265359d0*2.0d0
 
@@ -27,7 +48,7 @@ complex(8)::Z(2*n-1)
 complex(8),allocatable,dimension(:) :: X_, Y_
 integer::i,ie
 select case (trim(method))
-  case('index')
+  case default ! explicit index
     Z=czero
     do i=-n+1,n-1
       do ie = max(i+1,1),min(n,n+i)
@@ -62,7 +83,7 @@ complex(8)::Z(n)
 complex(8),allocatable,dimension(:) :: X_, Y_, Z_
 integer::i,ie
 select case (trim(method))
-  case('index')
+  case default ! explicit index
     Z=czero
     do i=-n/2+1,n/2-1
       do ie = max(i+1,1),min(n,n+i)
@@ -98,7 +119,7 @@ complex(8)::Z(n)
 complex(8),allocatable,dimension(:)::x_in, y_in, z_in
 integer::i,ie
 select case (trim(method))
-  case('index')
+  case default ! explicit index
     Z=czero
     do ie=1,n
       do i= -n+1,n-1
@@ -131,23 +152,26 @@ integer, intent(in)::n
 character(len=*),intent(in)::method
 complex(8),intent(in)::X(n),Y(n)
 complex(8)::Z(n)
-complex(8),allocatable,dimension(:)::x_in, y_in, z_in
-integer::i,ie
+complex(8),allocatable,dimension(:)::x_in, y_in, z_in,tmp
+integer::i,ie,iop
 select case (trim(method))
-  case('index')
-    Z=czero    
-    do ie=1,n
-      do i= -n/2+1,n/2-1
-        if ((ie .gt. max(i,1)).and.(ie .lt. min(n,(n+i)))) then
-          Z(ie)=Z(ie) + X(ie-i)*Y(i+n/2)
-        endif
-      enddo
+  case default ! explicit index
+    Z = czero  
+    do i= -n/2+1,n/2-1  
+      iop = i+n/2
+      Z((max(i,1)+1):min(n,(n+i)))=Z(max(i,1)+1:min(n,(n+i))) + X((max(i,1)+1-i):(min(n,(n+i))-i))*Y(iop)
+!      do ie=max(i,1)+1,min(n,(n+i))      
+!        !if ((ie .gt. max(i,1)).and.(ie .lt. (n+i))) then
+!          Z(ie)=Z(ie) + X(ie-i)*Y(iop)
+!        !endif
+!      enddo
     enddo    
   case('simple')
-    allocate(Y_in(n*2-1))
-    Y_in(n-n/2:n+n/2-1)=Y
+    allocate(Y_in(n*2-1))    
+    Y_in=czero
+    Y_in(n/2+1:n/2+n-1)=Y(1:n-1)    
     do i=1,n
-      Z(i)=sum(X(n:1:-1)*Y_in(i:i+n-1))
+      Z(i) = sum( Y_in(i:i+n-1)*X(n:1:-1) )
     enddo
     deallocate(Y_in)
   case('fft')
@@ -157,8 +181,8 @@ select case (trim(method))
     X_in=czero
     Y_in=czero
     X_in(1:n)=X    
-    Y_in(1:n/2)=Y(n/2+1:n)
-    Y_in(n*2-n/2:n*2-1)=Y(1:n/2)
+    Y_in(1:n/2)=Y(n/2:n-1)
+    Y_in(n*2-n/2+1:n*2-1)=Y(1:n/2-1)
      
     call do_mkl_dfti_conv(n*2-1,Y_in,X_in,Z_in)
     

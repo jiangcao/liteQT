@@ -1008,6 +1008,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   character ( len = 20 ) :: filename
   character ( len = 8 ) :: fmt
   character ( len = 4 ) :: rank_str
+  character ( len = 8 ) :: cmethod
   logical append
 
   real(8) :: local_energies(local_NE)
@@ -1362,7 +1363,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     P_greater_buf = dcmplx(0.0d0,0.0d0)    
     P_retarded_buf = dcmplx(0.0d0,0.0d0)    
 
-    nopmax=nen/2-10
+    nopmax=nen/2-1
+    
+    cmethod='fft'
+    call MKL_SET_NUM_THREADS(4)
 
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)             
@@ -1393,14 +1397,14 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 ikd=ikzd + (ikyd-1)*nkz
                 
                 P_lesser_by_blocks(:,iq,ix,i) = P_lesser_by_blocks(:,iq,ix,i) + &
-                                                corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),G_greater_t_by_blocks(:,ikd,ix,i),method='fft')
+                                                corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),G_greater_t_by_blocks(:,ikd,ix,i),method=cmethod)
                 
                 P_greater_by_blocks(:,iq,ix,i) = P_greater_by_blocks(:,iq,ix,i) + & 
-                                                corr1d(nen,G_greater_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
+                                                corr1d(nen,G_greater_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method=cmethod)
                 
                 P_retarded_by_blocks(:,iq,ix,i) = P_retarded_by_blocks(:,iq,ix,i) + & 
-                                                  corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),conjg(G_r_by_blocks(:,ikd,ix,i)),method='fft') + &
-                                                  corr1d(nen,G_r_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method='fft')
+                                                  corr1d(nen,G_lesser_by_blocks(:,ik,ix,i),conjg(G_r_by_blocks(:,ikd,ix,i)),method=cmethod) + &
+                                                  corr1d(nen,G_r_by_blocks(:,ik,ix,i),G_lesser_t_by_blocks(:,ikd,ix,i),method=cmethod)
                 
                 
 !                do nop=-nopmax,nopmax
@@ -1558,12 +1562,11 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     call energies_to_ijs_2(W_lesser_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
     call energies_to_ijs_2(W_greater_buf, tmp0, tmp1, nm, nx, nen, nk, local_Nij, local_NE, first_local_ij, first_local_energy, comm_rank, comm_size)
 
-    nopmax=nen/2-10
-
     Sigma_greater_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_lesser_new_buf = dcmplx(0.0d0,0.0d0)
     Sigma_r_new_buf = dcmplx(0.0d0,0.0d0)
   
+    cmethod='fft'
     ! hw from -inf to +inf: Sig^<>_ij(E) = (i/2pi) \int_dhw G^<>_ij(E-hw) W^<>_ij(hw)          
     do i = 1, local_Nij
       global_ij = i + first_local_ij - 1
@@ -1581,7 +1584,6 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
             do iqy=1,nky
               do iqz=1,nkz              
                 iq=iqz + (iqy-1)*nkz
-                ! iop=nop+nen/2                
                 ikzd=ikz-iqz + nkz/2
                 ikyd=iky-iqy + nky/2            
                 if (ikzd<1)   ikzd=ikzd+nkz
@@ -1593,15 +1595,15 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                 ikd=ikzd + (ikyd-1)*nkz
                 
                 sigma_lesser_new_by_blocks(:, ik, ix, i) = sigma_lesser_new_by_blocks(:, ik, ix, i) + &
-                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i),W_lesser_by_blocks(:, iq, ix, i),method='fft')
+                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i),W_lesser_by_blocks(:, iq, ix, i),method=cmethod)
                 
                 Sigma_greater_new_by_blocks(:, ik, ix, i) = Sigma_greater_new_by_blocks(:, ik, ix, i) + &
-                                                    conv1d(nen,G_greater_by_blocks(:, ikd, ix, i),W_greater_by_blocks(:, iq, ix, i),method='fft')
+                                                    conv1d(nen,G_greater_by_blocks(:, ikd, ix, i),W_greater_by_blocks(:, iq, ix, i),method=cmethod)
                 
                 Sigma_r_new_by_blocks(:, ik, ix, i) = Sigma_r_new_by_blocks(:, ik, ix, i) + & 
-                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method='fft') + &
-                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_lesser_by_blocks(:, iq, ix, i),method='fft') + &
-                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i) ,method='fft')
+                                                    conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method=cmethod) + &
+                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_lesser_by_blocks(:, iq, ix, i),method=cmethod) + &
+                                                    conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i) ,method=cmethod)
                 
                 
 !                do nop= -nopmax,nopmax
@@ -3897,7 +3899,7 @@ subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph
     COMPLEX(8) :: sig(nm,nm),sigmal(nm,nm),sigmar(nm,nm)
     COMPLEX(8) :: z
     integer::i,j,k,l
-    real(8)::tim,mul,mur,templ,tempr
+    real(8)::tim,mul,mur,templ,tempr,tmp1
     COMPLEX(8), allocatable :: Gl(:,:,:),Gln(:,:,:),Glp(:,:,:) ! left-connected green function
     complex(8), parameter :: alpha = cmplx(1.0d0,0.0d0)
     complex(8), parameter :: beta  = cmplx(0.0d0,0.0d0)
@@ -3929,6 +3931,11 @@ subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph
     H10(:,:)=H1i(:,:,1)
     !
     call sancho(NM,E,S00,H00,transpose(conjg(H10)),G00,GBB)
+    !
+    tmp1=maxval(abs(transpose(G00) - G00)) / maxval(abs(G00))
+    if (tmp1 > 2e-2) then
+        print *, 'E=',E, '|G00^t-G00|=', tmp1
+    endif
     !
     call zgemm('n','n',nm,nm,nm,alpha,H10,nm,G00,nm,beta,A,nm) 
     call zgemm('n','c',nm,nm,nm,alpha,A,nm,H10,nm,beta,sigmal,nm)      
