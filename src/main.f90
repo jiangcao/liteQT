@@ -18,7 +18,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb,labs
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb,labs, lvertex
 integer :: nen
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -65,6 +65,7 @@ if (ltrans) then
     read(10,*) lrcoulomb
     read(10,*) ldiag
     read(10,*) lrgf
+    read(10,*) lvertex
     read(10,*) lkz
     if (lkz) then
       read(10,*) nkz
@@ -404,7 +405,7 @@ if (ltrans) then
               Pmn(:,:,:,1),polaris,intensity,hw,labs,&
               G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),P_retarded(:,:,:,1),P_lesser(:,:,:,1),P_greater(:,:,:,1),&
               W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-              Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg)
+              Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg,lvertex=lvertex)
          
          else
          
@@ -422,47 +423,47 @@ if (ltrans) then
         !    W_retarded(:,:,:,1),W_lesser(:,:,:,1),W_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
         !    Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag)
         
-!        allocate(G_retarded(nb*length,nb*length,nen,1))
-!        allocate(G_lesser(nb*length,nb*length,nen,1))
-!        allocate(G_greater(nb*length,nb*length,nen,1))
+        allocate(G_retarded(nb*length,nb*length,nen,1))
+        allocate(G_lesser(nb*length,nb*length,nen,1))
+        allocate(G_greater(nb*length,nb*length,nen,1))
          
-!        allocate(Sig_retarded(nb*length,nb*length,nen,1))
-!        allocate(Sig_lesser(nb*length,nb*length,nen,1))
-!        allocate(Sig_greater(nb*length,nb*length,nen,1))
+        allocate(Sig_retarded(nb*length,nb*length,nen,1))
+        allocate(Sig_lesser(nb*length,nb*length,nen,1))
+        allocate(Sig_greater(nb*length,nb*length,nen,1))
         
-!        allocate(Sig_retarded_new(nb*length,nb*length,nen,1))
-!        allocate(Sig_lesser_new(nb*length,nb*length,nen,1))
-!        allocate(Sig_greater_new(nb*length,nb*length,nen,1))
-        
-!        Sig_retarded = dcmplx(0.0d0,0.0d0)
-!        Sig_lesser = dcmplx(0.0d0,0.0d0)
-!        Sig_greater = dcmplx(0.0d0,0.0d0)
-        
-!        call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
-!            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
-!            G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
-!            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg,writeGF=.false.)
-
-        allocate(G_retarded(nb,nb,length,nen))
-        allocate(G_lesser(nb,nb,length,nen))
-        allocate(G_greater(nb,nb,length,nen))
-         
-        allocate(Sig_retarded(nb,nb,length,nen))
-        allocate(Sig_lesser(nb,nb,length,nen))
-        allocate(Sig_greater(nb,nb,length,nen))
-        
-        allocate(Sig_retarded_new(nb,nb,length,nen))
-        allocate(Sig_lesser_new(nb,nb,length,nen))
-        allocate(Sig_greater_new(nb,nb,length,nen))
+        allocate(Sig_retarded_new(nb*length,nb*length,nen,1))
+        allocate(Sig_lesser_new(nb*length,nb*length,nen,1))
+        allocate(Sig_greater_new(nb*length,nb*length,nen,1))
         
         Sig_retarded = dcmplx(0.0d0,0.0d0)
         Sig_lesser = dcmplx(0.0d0,0.0d0)
         Sig_greater = dcmplx(0.0d0,0.0d0)
+        
+        call green_solve_gw_1D_memsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
+            alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+            G_retarded(:,:,:,1),G_lesser(:,:,:,1),G_greater(:,:,:,1),Sig_retarded(:,:,:,1),Sig_lesser(:,:,:,1),Sig_greater(:,:,:,1),&
+            Sig_retarded_new(:,:,:,1),Sig_lesser_new(:,:,:,1),Sig_greater_new(:,:,:,1),ldiag,encut,Eg,writeGF=.false.,lvertex=lvertex)
 
-        call green_solve_gw_1D_supermemsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
-          alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
-          G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg,writeGF=.false.)
+!        allocate(G_retarded(nb,nb,length,nen))
+!        allocate(G_lesser(nb,nb,length,nen))
+!        allocate(G_greater(nb,nb,length,nen))
+         
+!        allocate(Sig_retarded(nb,nb,length,nen))
+!        allocate(Sig_lesser(nb,nb,length,nen))
+!        allocate(Sig_greater(nb,nb,length,nen))
+        
+!        allocate(Sig_retarded_new(nb,nb,length,nen))
+!        allocate(Sig_lesser_new(nb,nb,length,nen))
+!        allocate(Sig_greater_new(nb,nb,length,nen))
+        
+!        Sig_retarded = dcmplx(0.0d0,0.0d0)
+!        Sig_lesser = dcmplx(0.0d0,0.0d0)
+!        Sig_greater = dcmplx(0.0d0,0.0d0)
+
+!        call green_solve_gw_1D_supermemsaving(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,midgap,&
+!          alpha_mix,nen,En,nb,ns,Ham(:,:,1),H00ld(:,:,:,1),H10ld(:,:,:,1),T(:,:,:,1),V(:,:,1),&
+!          G_retarded,G_lesser,G_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+!          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,encut,Eg,writeGF=.false.)
       endif
       
       

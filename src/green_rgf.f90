@@ -980,7 +980,7 @@ end subroutine green_rgf_solve_gw_ephoton_3d
 
 
 
-subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs, comm_size, comm_rank, local_NE, first_local_energy)
+subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs,lnogw, comm_size, comm_rank, local_NE, first_local_energy)
   use fft_mod, only : conv1d => conv1d2, corr1d => corr1d2
   integer ( kind = 4), intent(in) :: comm_size, comm_rank, local_NE, first_local_energy
   integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
@@ -990,6 +990,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   real(8), intent(in) :: polarization(3) ! light polarization vector 
   real(8), intent(in) :: intensity ! [W/m^2]
   logical, intent(in) :: labs ! whether to calculate Pi and absorption
+  logical, intent(in) :: lnogw ! whether to activate gw
   complex(8), intent(in):: Pii(nm,nm,3,nx,nky*nkz),P1i(nm,nm,3,nx,nky*nkz) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
   real(8), intent(in) :: hw ! hw is photon energy in eV
   ! -------- local variables
@@ -1184,7 +1185,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   sigma_r_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_r_new_buf
   sigma_greater_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_greater_new_buf
   sigma_lesser_new_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => sigma_lesser_new_buf
-
+if(.not. lnogw) then
   allocate(P_retarded_buf(nm * nm * nx * local_NE * nk))
   allocate(P_greater_buf(nm * nm * nx * local_NE * nk))
   allocate(P_lesser_buf(nm * nm * nx * local_NE * nk))
@@ -1214,6 +1215,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   W_retarded_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_retarded_buf
   W_greater_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_greater_buf
   W_lesser_by_blocks(1:NE, 1:nk, 1:NX, 1:local_Nij) => W_lesser_buf
+endif
 
   allocate(cur(nm, nm, nx, local_NE, nk))
 
@@ -1249,8 +1251,9 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   endif
 
   call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
+  
   do iter=0,niter
+  
     if (comm_rank == 0) then
       print *,'+ iter=',iter
     endif
@@ -1344,7 +1347,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
       print *, 'Computing P ...'
     endif
     start = finish
-
+if (.not. lnogw) then
     g_r_buf = dcmplx( 0.0d0*dble(g_r_buf), aimag(g_r_buf))
     g_lesser_buf = dcmplx( 0.0d0*dble(g_lesser_buf), aimag(g_lesser_buf))
     g_greater_buf = dcmplx( 0.0d0*dble(g_greater_buf), aimag(g_greater_buf))
@@ -1604,6 +1607,8 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
                                                     conv1d(nen,G_lesser_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i),method=cmethod) + &
                                                     conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_lesser_by_blocks(:, iq, ix, i),method=cmethod) + &
                                                     conv1d(nen,G_r_by_blocks(:, ikd, ix, i), W_retarded_by_blocks(:, iq, ix, i) ,method=cmethod)
+
+                !Sigma_r_new_by_blocks(:, ik, ix, i) = Sigma_r_new_by_blocks(:, ik, ix, i) + sum(G_r_by_blocks(:, ikd, ix, i))* Vii(row,col,ix,iq)
                 
                 
 !                do nop= -nopmax,nopmax
@@ -1758,7 +1763,7 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
     if (comm_rank == 0) then
       print '("Scattering computation time = ", F0.3 ," seconds.")', finish-start      
     endif
-    
+  endif ! end computing GW
     if (iter>=(niter-5)) then
 
       if (comm_rank == 0) then
@@ -2018,8 +2023,10 @@ subroutine green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,nx,nky,nkz
   deallocate(g_lesser_photon_buf, g_greater_photon_buf)
   deallocate(sigma_lesser_gw_buf, sigma_greater_gw_buf, sigma_r_gw_buf)
   deallocate(sigma_lesser_new_buf, sigma_greater_new_buf, sigma_r_new_buf)
-  deallocate(P_retarded_buf, P_lesser_buf, P_greater_buf)
-  deallocate(W_retarded_buf, W_lesser_buf, W_greater_buf)
+  if (.not. lnogw) then
+    deallocate(P_retarded_buf, P_lesser_buf, P_greater_buf)
+    deallocate(W_retarded_buf, W_lesser_buf, W_greater_buf)
+  endif
   deallocate(Mii)
 
   deallocate(extended_local_energies)

@@ -1,7 +1,11 @@
+! Copyright (c) 2023 Jiang Cao, ETH Zurich 
+! All rights reserved.
+!
 PROGRAM main
 
 USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks
 use green, only : green_calc_g, green_solve_gw_3D
+use gw_dense, only : green_solve_gw_1D
 use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d, green_rgf_solve_gw_ephoton_3d_mpi_kpar, green_rgf_solve_gw_ephoton_3d_ijs
 implicit none
 
@@ -22,14 +26,16 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Si
 complex(8), allocatable :: Pmn(:,:,:,:)
 
 logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb,labs
-integer :: nen
-complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
-complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
+character(len=5)::conv_method
+integer :: nen , pottype
+complex(8), parameter :: cone = dcmplx(1.0d0,0.0d0)
+complex(8), parameter :: czero  = dcmplx(0.0d0,0.0d0)
 real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz,ndiag,nk
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2),dky
-real(8) :: intensity,hw,midgap(2),polaris(3)
+real(8) :: intensity,hw,midgap(2),polaris(3), ky_shift, kz_shift
+real(8) :: scba_tol
 
 ! MPI variables
 integer ( kind = 4 ) ierr
@@ -87,9 +93,10 @@ if (ltrans) then
     read(10,*) emin, emax, nen
     read(10,*) lreadpot
     if (lreadpot) then
-      read(10,*) potscale
+      read(10,*) potscale, pottype
     endif
     read(10,*) niter
+    read(10,*) scba_tol
     read(10,*) eps_screen
     read(10,*) r0
     read(10,*) mus,mud
@@ -99,9 +106,11 @@ if (ltrans) then
     read(10,*) lrcoulomb
     read(10,*) ldiag
     read(10,*) lrgf
+    read(10,*) conv_method
     read(10,*) lkz
     if (lkz) then
       read(10,*) nky,nkz
+      read(10,*) ky_shift, kz_shift
     endif
     read(10,*) lephot
     if (lephot) then
@@ -136,12 +145,15 @@ call omp_set_num_threads(ncpu)
 
 if (ltrans) then    
   if (.not.lrgf) then    
-    if (lkz) then ! 2d case
+
+      if (.not. lkz) then ! 1d case
+        nky=1
+        nkz=1
+      endif
       print *, 'Build the full device H'
       print *, 'length=',length
       allocate(Ham(nb*length,nb*length,nky*nkz))
       allocate(  V(nb*length,nb*length,nky*nkz))      
-      allocate(pot(length))
       allocate(H00ld(nb*NS,nb*NS,2,nky*nkz))
       allocate(H10ld(nb*NS,nb*NS,2,nky*nkz))
       allocate(T(nb*ns,nb*length,2,nky*nkz))
@@ -195,14 +207,7 @@ if (ltrans) then
         enddo
       enddo
       close(11)
-      pot(:) = 0.0d0
-      if (lreadpot) then
-          open(unit=10,file='pot_dat',status='unknown')
-          do i = 1,length
-              read(10,*) pot(i)
-          enddo
-          close(10)
-      endif         
+
       allocate(en(nen))
       allocate(G_retarded(nb*length,nb*length,nen,nky*nkz))
       allocate(G_lesser(nb*length,nb*length,nen,nky*nkz))
@@ -260,28 +265,65 @@ if (ltrans) then
       close(11)
       
       ! add on potential    
-      pot = pot*potscale
-      do j = 1,length
-          do ib = 1,nb
-              Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot(j)
-          end do
-      end do      
-      do ib = 1,nb*NS
-          H00ld(ib,ib,1,:)=H00ld(ib,ib,1,:)+pot(1)
-          H00ld(ib,ib,2,:)=H00ld(ib,ib,2,:)+pot(length)
-      end do
+      if (lreadpot) then
+        open(unit=10,file='pot_dat',status='unknown')
+        if (pottype == 1) then
+          allocate(pot(length))
+          pot(:) = 0.0d0
+          do i = 1,length
+              read(10,*) pot(i)
+          enddo
+        else 
+          allocate(pot(length*NB))
+          pot(:) = 0.0d0
+          do i = 1,length*NB
+              read(10,*) pot(i)
+          enddo
+        endif
+        close(10)
+        pot = pot*potscale
+        if (pottype == 1) then
+           do j = 1,length
+               do ib = 1,nb
+                   Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot(j)
+               end do
+           end do      
+        else  
+           do j = 1,length
+               do ib = 1,nb
+                   Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot((j-1)*nb+ib)
+               end do
+           end do
+        endif
+        do ib = 1,nb*NS
+            H00ld(ib,ib,1,:)=H00ld(ib,ib,1,:)+pot(1)
+            H00ld(ib,ib,2,:)=H00ld(ib,ib,2,:)+pot(length)
+        end do
+        deallocate(pot)
+      endif
       nm_dev=nb*length    
       
       midgap=(/ (CBM+VBM)/2.0d0,(CBM+VBM)/2.0d0 /)
-      midgap= midgap + (/ pot(1), pot(length)/)
+      !midgap= midgap + (/ pot(1), pot(length)/)
       !
-      call green_solve_gw_3D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
-        alpha_mix,nen,En,nb,ns,nky,nkz,Ham,H00ld,H10ld,T,V,&
-        G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
-        W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-        Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+      if ((nkz == 1) .and. (nky==1)) then
+      
+        call green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,conv_method,&
+          alpha_mix,nen,En,nb,ns,Ham,H00ld,H10ld,T,V,&
+          G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+          W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+          
+      else
+      
+        call green_solve_gw_3D(niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,&
+          alpha_mix,nen,En,nb,ns,nky,nkz,Ham,H00ld,H10ld,T,V,&
+          G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
+          W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
+          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+          
+      endif
 
-      deallocate(pot)
       deallocate(H00ld)
       deallocate(H10ld) 
       deallocate(Ham)    
@@ -303,7 +345,6 @@ if (ltrans) then
       deallocate(Sig_greater_new)
       deallocate(en)    
       deallocate(V)
-    endif
    else
     ! Long device, use RGF
 
@@ -314,7 +355,14 @@ if (ltrans) then
       print *, 'Build the full device H'
       print *, 'length=',length*NS,'uc =',length*NS*Lx/1.0d1,'(nm)'
     endif
-
+    if (.not. lkz) then
+      nky=1
+      nkz=1
+      ky_shift=0.0d0
+      kz_shift=0.0d0
+    endif
+    
+  
     nm=NB*NS
     nk=nky*nkz
     allocate(Hii(nm,nm,length,nk))
@@ -324,7 +372,6 @@ if (ltrans) then
     allocate(V1i(nm,nm,length,nk))    
     allocate(Pii(nm,nm,3,length,nk))
     allocate(P1i(nm,nm,3,length,nk))    
-    allocate(pot(length*NS))    
     if (nkz>1) then
       dkz=2.0d0*pi/Lz / dble(nkz)
     else
@@ -345,16 +392,16 @@ if (ltrans) then
     endif
 
     do iky=1,nky
-      ky=-pi/Ly + dble(iky)*dky
+      ky=-pi/Ly + dble(iky)*dky + ky_shift*2.0d0*pi/Ly
       do ikz=1,nkz
-        kz=-pi/Lz + dble(ikz)*dkz
+        kz=-pi/Lz + dble(ikz)*dkz + kz_shift*2.0d0*pi/Ly
         ik=ikz+(iky-1)*nkz
 
         if (comm_rank == 0) then
-          write(10,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-          write(11,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-          write(20,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
-          write(21,'(A,I6,2F15.4)') 'ik',ik,ky*Ly,kz*Lz
+          write(10,'(A,I6,2F15.4)') '# ik',ik,ky*Ly,kz*Lz
+          write(11,'(A,I6,2F15.4)') '# ik',ik,ky*Ly,kz*Lz
+          write(20,'(A,I6,2F15.4)') '# ik',ik,ky*Ly,kz*Lz
+          write(21,'(A,I6,2F15.4)') '# ik',ik,ky*Ly,kz*Lz
         endif
 
         ! get Ham blocks
@@ -413,9 +460,9 @@ if (ltrans) then
     allocate(phix(nkx))
     allocate(ek(nb*ns,nkx))
     do iky=1,nky
-      ky=-pi/Ly + dble(iky)*dky
+      ky=-pi/Ly + dble(iky)*dky +ky_shift*2.0d0*pi/Ly
       do ikz=1,nkz
-        kz=-pi/Lz + dble(ikz)*dkz
+        kz=-pi/Lz + dble(ikz)*dkz +kz_shift*2.0d0*pi/Ly
         ik=ikz+(iky-1)*nkz          
         ! write bands into ek.dat                                      
         phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
@@ -424,7 +471,6 @@ if (ltrans) then
             H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,1,ik)
             H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,1,ik)))
             ek(:,i) = eig(NB*NS,H00)
-
         enddo  
         
         if (comm_rank == 0) then
@@ -447,32 +493,55 @@ if (ltrans) then
 
 
     !
-    pot(:) = 0.0d0
     if (lreadpot) then
       open(unit=10,file='pot_dat',status='unknown')
-      do i = 1,length*NS
-          read(10,*) pot(i)
-      end do
+      if (pottype == 1) then
+        allocate(pot(length*NS))
+        pot(:) = 0.0d0
+        do i = 1,length*NS
+            read(10,*) pot(i)
+        enddo
+      else 
+        allocate(pot(length*NS*NB))
+        pot(:) = 0.0d0
+        do i = 1,length*NS*NB
+            read(10,*) pot(i)
+        enddo
+      endif
       close(10)
       pot=pot*potscale
       ! add on potential    
-      do ik=1,nk
-        do j = 1,length
-          do k = 1,NS
-            do ib = 1,nb
-              Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS+k)
+      if (pottype == 1) then
+        do ik=1,nk
+          do j = 1,length
+            do k = 1,NS
+              do ib = 1,nb
+                Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS+k)
+              enddo
             enddo
-          enddo
-        enddo      
-      enddo
-    end if             
+          enddo      
+        enddo
+      else
+        do ik=1,nk
+          do j = 1,length
+            do k = 1,NS
+              do ib = 1,nb
+                Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS*nb+(k-1)*nb+ib)
+              enddo
+            enddo
+          enddo      
+        enddo
+      endif
+      deallocate(pot)
+    endif         
+
     allocate(en(nen))
     en=(/(i, i=1,nen, 1)/) / dble(nen) * (emax-emin) + emin
 
     if (ldiag) then
       ndiag=0
     else
-      ndiag=NB*NS
+      ndiag=NB
     endif
 
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
@@ -486,20 +555,24 @@ if (ltrans) then
       if (comm_size == 1) then
         call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
       else
-        call green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs, comm_size, comm_rank, local_NE, first_local_energy)
+        call green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs,lnogw, comm_size, comm_rank, local_NE, first_local_energy)
 
       endif
     else
-      call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+      if (comm_size == 1) then
+        call green_rgf_solve_gw_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg))
+      else
+        call green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,0.0d0,1.0d0,.false.,lnogw, comm_size, comm_rank, local_NE, first_local_energy)        
+      endif
     endif
     
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
 
     deallocate(Hii,H1i)
     deallocate(Vii,V1i)
-    deallocate(Pii,P1i)
-    deallocate(pot)
+    deallocate(Pii,P1i)    
     deallocate(en)
+    
   endif        
 end if
 if (allocated(B)) deallocate(B)

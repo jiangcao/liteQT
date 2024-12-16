@@ -29,9 +29,9 @@ vpath %.o $(MODDIR)
 
 # Targets.
 
-all: liteQT_3d_mpi.x 
+all: gw_mpi.x 
 
-liteQT_3d_mpi.x : main3d.f90 mkl_dfti.o wannierHam3d.o green.o green_rgf.o
+gw_mpi.x : main3d.f90 mkl_dfti.o parameters.o fft_mod.o block_sparse.o wannierHam3d.o green.o gw_dense.o green_rgf.o
 
 	$(FC90) -o $@ $< $(MODDIR)/*.o $(F90_FLAGS) $(LIBS) -I$(MODDIR) -J$(MODDIR)
 
