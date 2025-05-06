@@ -10,6 +10,7 @@
 !  
 ! Maintenance:
 !===============================================================================
+
 module block_sparse 
 ! defines some block sparse matrix formats and functions to manipulate them
     use parameters_mod, only: dp,czero

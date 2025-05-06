@@ -48,7 +48,7 @@ bse.x : bse_abs.f90 wannierHam.o bse_mod.o
 .PHONY : clean;
 
 clean :
-	rm -f $(MODDIR)/*.o $(MODDIR)/*.mod
+	rm -f $(MODDIR)/*.o $(MODDIR)/*.mod $(SRCDIR)/*.o $(SRCDIR)/*.mod
 
 # implicit rules
 

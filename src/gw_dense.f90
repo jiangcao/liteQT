@@ -1,11 +1,21 @@
-! Copyright (c) 2023 Jiang Cao, ETH Zurich 
-! All rights reserved.
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
 !
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
+
 module gw_dense
 
 use fft_mod, only: conv1d => conv1d2, corr1d => corr1d2 
-use parameters_mod, only: c1i, cone, czero, pi, twopi, two, hbar, e_charge
-use green, only: green_calc_g, write_spectrum, write_current,write_current_spectrum,calc_bond_current,calc_collision
+use parameters_mod, only: dp, c1i, cone, czero, pi, twopi, two, hbar, e_charge
+use green, only: green_calc_g
 
 implicit none 
 
@@ -15,40 +25,42 @@ public:: green_solve_gw_1D
 
 CONTAINS
 
-
-! driver for iterating the GW self-energy SCBA loop: G -> P -> W -> Sig 
-subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,conv_method,&
+! driver subroutine for iterating the GW self-energy SCBA loop: G -> P -> W -> Sig 
+subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd,mus,mud,conv_method,mid_bandgap,&
   alpha_mix,nen,En,nb,ns,Ham,H00lead,H10lead,lead_coupling,V,&
   G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
   W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
-  integer, intent(in) :: nen, nb, ns,niter,nm_dev,length
-  real(8), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol
-  complex(8),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),lead_coupling(NB*NS,nm_dev,2)
-  complex(8), intent(in):: V(nm_dev,nm_dev)
+  Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,charge)
+  !
+  integer, intent(in) :: nen,nb,ns,niter,nm_dev,length
+  real(dp), intent(in) :: En(nen), temps,tempd, mus, mud, alpha_mix,Lx,spindeg,scba_tol, mid_bandgap(nm_dev)
+  complex(dp),intent(in) :: Ham(nm_dev,nm_dev),H00lead(NB*NS,NB*NS,2),H10lead(NB*NS,NB*NS,2),lead_coupling(NB*NS,nm_dev,2)
+  complex(dp), intent(in):: V(nm_dev,nm_dev)
   logical,intent(in)::ldiag
   character(len=*),intent(in)::conv_method
-  complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
-  complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater
-  complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
-  complex(8),intent(inout),dimension(nm_dev,nm_dev,nen) ::  P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater
+  complex(dp),intent(inout),dimension(nm_dev,nm_dev,nen) ::  G_retarded,G_lesser,G_greater
+  complex(dp),intent(inout),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded,Sig_lesser,Sig_greater
+  complex(dp),intent(inout),dimension(nm_dev,nm_dev,nen) ::  Sig_retarded_new,Sig_lesser_new,Sig_greater_new
+  complex(dp),intent(inout),dimension(nm_dev,nm_dev,nen) ::  P_retarded,P_lesser,P_greater,W_retarded,W_lesser,W_greater
+  real(dp),dimension(nm_dev),intent(inout)::charge
   !---- local variables
-  complex(8),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
-  complex(8),allocatable,dimension(:,:):: B ! tmp matrix
-  real(8),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:)
-  real(8),allocatable::Tr(:,:) ! current spectrum on leads
-  real(8),allocatable::Te(:,:,:) ! transmission matrix spectrum
+  complex(dp),allocatable::siglead(:,:,:,:) ! lead scattering sigma_retarded
+  complex(dp),allocatable,dimension(:,:):: B ! tmp matrix
+  real(dp),allocatable::cur(:,:,:),tot_cur(:,:),tot_ecur(:,:),wen(:)
+  real(dp),allocatable::Tr(:,:) ! current spectrum on leads
+  real(dp),allocatable::Te(:,:,:) ! transmission matrix spectrum
   integer :: iter,ie,nopmax,iep
   integer :: i,j,nm,nop,l,h,iop,ndiag
-  complex(8),allocatable::Ispec(:,:,:),Itot(:,:)
-  complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
-  complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
-  REAL(8)::scba_error
-  complex(8) :: dE
-  real(8)::nelec(2),mu(2),pelec(2), tmp, G_lesser_sum
-  real(8)::ndens(nm_dev),ndens_intrinsic(nm_dev)
-  complex(8)::tmp2(nen)
-  print *,'============ green_solve_gw_1D ============'
+  complex(dp),allocatable::Ispec(:,:,:),Itot(:,:)  
+  real(dp)::scba_error
+  real(dp)::E_hartree
+  complex(dp) :: dE
+  real(dp)::nelec(2),mu(2),pelec(2), tmp, G_lesser_sum
+  real(dp),dimension(nm_dev)::ndens,ndens_intrinsic,pdens,pdens_intrinsic
+  complex(dp)::tmp2(nen)
+  integer::ie_gap(nm_dev),ie_gap_old(nm_dev) ! energy index of mid-bandgap energy
+  !
+  print *,'============ green_solve_gw_1D ============'  
   allocate(siglead(NB*NS,NB*NS,nen,2))
   allocate(wen(nen))
   wen(:)=en(:)-en(nen/2)
@@ -63,10 +75,18 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
   allocate(Itot(nm_dev,nm_dev))
   allocate(tr(nen,2))
   mu=(/ mus, mud /)
-  print '(a8,f15.4,a8,f15.4)', 'mus=',mu(1),'mud=',mu(2)
+  print '(a5,f15.4,a5,f15.6)', 'mus=',mu(1),'mud=',mu(2)
+  !$omp parallel default(shared) private(i)  
+  !$omp do
+  do i=1,nm_dev          
+    ie_gap(i) = (mid_bandgap(i)-en(1)) / (en(2) - en(1)) + 1
+  enddo        
+  !$omp end do
+  !$omp end parallel
+  !
   do iter=0,niter
-    print *,'+ iter=',iter    
-    print *, 'calc G'  
+    print '("+ iter=",i8)',iter    
+    print *, '  calc G'  
     call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,&
       Ham,H00lead,H10lead,Siglead,lead_coupling,&
       Sig_retarded,Sig_lesser,Sig_greater,&
@@ -78,8 +98,10 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
     call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
     call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
-!    call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+    call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
 !    call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
+    call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
+    call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
     !call write_matrix_summed_overE('Gr',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
     !call write_matrix_E('G_r',iter,G_retarded,nen,en,length,NB,(/1.0,1.0/))
     !call write_matrix_E('G_l',iter,G_lesser,nen,en,length,NB,(/1.0,1.0/))
@@ -89,17 +111,26 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     write(101,'(I4,2E16.6)') iter, - sum(Tr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
       sum(Tr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
     close(101)
-    write(6,'(I4,2E16.6)') iter, - sum(Tr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
+    write(6,'(I4," ID=",2E16.6)') iter, - sum(Tr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
       sum(Tr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
-    !
-!    do i=1,nm_dev
-!      ndens(i) = dimag(sum(G_lesser(i,i,:))) * (en(2)-en(1)) / twopi * spindeg 
-!    enddo
-!    if (iter == 0) then
-!      ndens_intrinsic(:) = ndens(:)
-!    endif
     !        
-    print *, 'calc P'  
+    call write_potprofile('gw_midgap',iter,(ie_gap(:)-1)*(en(2)-en(1))+en(1),length,NB,Lx)
+    !$omp parallel default(shared) private(i)  
+    !$omp do
+    do i=1,nm_dev      
+      ndens(i) = dimag(sum(G_lesser(i,i,ie_gap(i):))) * (en(2)-en(1)) / twopi * spindeg 
+      pdens(i) =-dimag(sum(G_greater(i,i,:ie_gap(i)))) * (en(2)-en(1)) / twopi * spindeg 
+    enddo
+    !$omp end do
+    !$omp end parallel
+    call write_charge('gw_n',iter,ndens,length,NB,Lx)
+    call write_charge('gw_p',iter,pdens,length,NB,Lx)
+    if (iter < 1) then
+      ndens_intrinsic(:) = ndens(:)
+      pdens_intrinsic(:) = pdens(:)
+    endif
+    !        
+    print *, '  calc P'  
     ! Pij^<>(hw) = \int_dE Gij^<>(E) * Gji^><(E-hw)
     ! Pij^r(hw)  = \int_dE Gij^<(E) * Gji^a(E-hw) + Gij^r(E) * Gji^<(E-hw)
     P_lesser=czero
@@ -127,11 +158,11 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     P_greater=P_greater*dE
     P_retarded=(P_greater - P_lesser) / two
     !
-    call write_spectrum('PR',0,P_retarded,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('PL',0,P_lesser,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('PG',0,P_greater,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))    
+!    call write_spectrum('PR',0,P_retarded,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('PL',0,P_lesser,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('PG',0,P_greater,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))    
     !
-    print *, 'calc W'  
+    print *, '  calc W'  
     W_lesser=czero
     W_greater=czero
     W_retarded=czero
@@ -143,11 +174,11 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     enddo
     !$omp end do
     !$omp end parallel
-    call write_spectrum('WR',0,W_retarded,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('WL',0,W_lesser,  nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('WG',0,W_greater, nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))    
+!    call write_spectrum('WR',0,W_retarded,nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('WL',0,W_lesser,  nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('WG',0,W_greater, nen,wen,length,NB,Lx,(/1.0d0,1.0d0/))    
     !
-    print *, 'calc SigGW'
+    print *, '  calc SigGW'
     Sig_greater_new = dcmplx(0.0d0,0.0d0)
     Sig_lesser_new = dcmplx(0.0d0,0.0d0)
     Sig_retarded_new = dcmplx(0.0d0,0.0d0)  
@@ -177,11 +208,31 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     Sig_retarded_new = dcmplx( dble(Sig_retarded_new), dimag(Sig_greater_new-Sig_lesser_new)/two )
     Sig_lesser_new = dcmplx( 0.0d0*dble(Sig_lesser_new), dimag(Sig_lesser_new) )
     Sig_greater_new = dcmplx( 0.0d0*dble(Sig_greater_new), dimag(Sig_greater_new) )
-    !
-    ! add Hartree potential
-!    do i=1,nm_dev      
-!      Sig_retarded_new(i,i,:) = Sig_retarded_new(i,i,:) + sum(V(i,:)*(ndens(:) - ndens_intrinsic(:)))      
-!    enddo
+    !    
+    ! Hartree potential    
+    ie_gap_old(:) = ie_gap(:)
+    if (iter>=1) then
+      !$omp parallel default(shared) private(i,E_hartree)  
+      !$omp do
+      do i=1,nm_dev      
+        E_hartree = dble(sum(V(i,:) * ( ndens(:) - ndens_intrinsic(:) + (pdens(:) - pdens_intrinsic(:)))))        
+        ! left boundary correction
+        if (i <= NB*NS) then 
+          E_hartree = E_hartree + dble(sum(V(i+NB*NS,:NB*NS) * ( ndens(:NB*NS) - ndens_intrinsic(:NB*NS) + (pdens(:NB*NS) - pdens_intrinsic(:NB*NS)))))
+        endif 
+        ! right boundary correction
+        if (i > (nm_dev-NB)) then 
+          E_hartree = E_hartree + dble(sum(V(i-NB,nm_dev-NB+1:) * ( ndens(nm_dev-NB+1:) - ndens_intrinsic(nm_dev-NB+1:) + (pdens(nm_dev-NB+1:) - pdens_intrinsic(nm_dev-NB+1:)))))
+        endif 
+        !
+        Sig_retarded_new(i,i,:) = Sig_retarded_new(i,i,:) + E_hartree
+        ie_gap(i) = ( (mid_bandgap(i)+E_hartree-en(1)) / (en(2) - en(1)) + 1 - ie_gap_old(i) ) * alpha_mix + ie_gap_old(i)        
+        ie_gap(i) = max(1, ie_gap(i))
+        ie_gap(i) = min(nen, ie_gap(i))
+      enddo        
+      !$omp end do
+      !$omp end parallel      
+    endif
     !
     ! symmetrize the self-energies
     do ie=1,nen
@@ -197,36 +248,33 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
     open(unit=101,file='gw_scba_error.dat',status='unknown',position='append')
     write(101,'(I4,E16.6)') iter, scba_error
     close(101)
-    write(6,'(I4,E16.6)') iter, scba_error
+    write(6,'(I4," error=",F16.10)') iter, scba_error
     ! mixing with the previous one and update
     Sig_retarded = Sig_retarded+ alpha_mix * (Sig_retarded_new -Sig_retarded)
     Sig_lesser  = Sig_lesser+ alpha_mix * (Sig_lesser_new -Sig_lesser)
     Sig_greater = Sig_greater+ alpha_mix * (Sig_greater_new -Sig_greater)    
     !
-    ! call homogenize_selfenergy(Sig_retarded,Sig_lesser,Sig_greater,nm_dev,nen,NB,NS)
-    !
     ! get leads sigma
     siglead(:,:,:,1) = Sig_retarded(1:NB*NS,1:NB*NS,:)
     siglead(:,:,:,2) = Sig_retarded(nm_dev-NB*NS+1:nm_dev,nm_dev-NB*NS+1:nm_dev,:)      
     !
-    call write_spectrum('SigR',0,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('SigL',0,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
-    call write_spectrum('SigG',0,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('SigR',0,Sig_retarded,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('SigL',0,Sig_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('SigG',0,Sig_greater,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
     !
     ! calculate collision integral
     call calc_collision(Sig_lesser_new,Sig_greater_new,G_lesser,G_greater,nen,en,spindeg,nm_dev,Itot,Ispec)
-    call write_spectrum('gw_Scat',0,Ispec,nen,En,length,NB,Lx,(/1.0d0,0.0d0/))
+    call write_spectrum('gw_Scat',iter,Ispec,nen,En,length,NB,Lx,(/1.0d0,0.0d0/))
     !
     if (scba_error < scba_tol) then
       exit
     endif
-  enddo ! iter loop               
-  if (iter == niter) then 
-    print *, "warning: max number of iterations reached!"
-  endif
+    if (iter == niter) then 
+      print *, "warning: max number of iterations reached!"
+    endif
+  enddo ! iter loop                 
   !  
-  ! calculate GF for the last time    
-  iter=iter+1
+  ! calculate GF for the last time      
   print *, 'calc G for the last time'  
   call green_calc_g(nen,En,2,nm_dev,(/nb*ns,nb*ns/),nb*ns,&
       Ham,H00lead,H10lead,Siglead,lead_coupling,&
@@ -239,6 +287,10 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
   call write_current('gw_I',iter,tot_cur,length,NB,NS,Lx)
   call write_current('gw_EI',iter,tot_ecur,length,NB,NS,Lx)
   call write_spectrum('gw_ldos',iter,G_retarded,nen,En,length,NB,Lx,(/1.0d0,-2.0d0/))
+  call write_spectrum('gw_ndos',iter,G_lesser,nen,En,length,NB,Lx,(/1.0d0,1.0d0/))
+!    call write_spectrum('gw_pdos',iter,G_greater,nen,En,length,NB,Lx,(/1.0d0,-1.0d0/))
+  call write_transmission_spectrum('gw_trL',iter,Tr(:,1)*spindeg,nen,En)
+  call write_transmission_spectrum('gw_trR',iter,Tr(:,2)*spindeg,nen,En)
   !
   open(unit=101,file='gw_Id_iteration.dat',status='unknown',position='append')
   write(101,'(I4,2E16.6)') iter, - sum(Tr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
@@ -246,6 +298,8 @@ subroutine green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,spindeg,temps,tempd
   close(101)
   write(6,'(I4,2E16.6)') iter, - sum(Tr(:,1))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg), &
     sum(Tr(:,2))*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
+  !
+  charge(:) = ndens(:) - pdens(:)
 end subroutine green_solve_gw_1D
 
 
@@ -798,6 +852,208 @@ subroutine homogenize_selfenergy(Sig_retarded,Sig_lesser,Sig_greater,nm_dev,nen,
   enddo
 end subroutine homogenize_selfenergy
 
+
+!-------------------------  OBSERVABLES  -------------------------------
+
+! calculate bond current using I_ij = H_ij G<_ji - H_ji G^<_ij
+subroutine calc_bond_current(H,G_lesser,nen,en,spindeg,nm_dev,tot_cur,tot_ecur,cur)
+  complex(8),intent(in)::H(nm_dev,nm_dev),G_lesser(nm_dev,nm_dev,nen)
+  real(8),intent(in)::en(nen),spindeg
+  integer,intent(in)::nen,nm_dev ! number of E and device dimension
+  real(8),intent(out)::tot_cur(nm_dev,nm_dev) ! total bond current density
+  real(8),intent(out),optional::tot_ecur(nm_dev,nm_dev) ! total bond energy current density
+  real(8),intent(out),optional::cur(nm_dev,nm_dev,nen) ! energy resolved bond current density
+  !----
+  complex(8),allocatable::B(:,:)
+  integer::ie,io,jo
+  real(8),parameter::tpi=6.28318530718  
+  allocate(B(nm_dev,nm_dev))
+  tot_cur=0.0d0  
+  tot_ecur=0.0d0
+  do ie=1,nen
+    do io=1,nm_dev
+      !$omp parallel default(shared) private(jo)  
+      !$omp do
+      do jo=1,nm_dev
+        B(io,jo)=H(io,jo)*G_lesser(jo,io,ie) - H(jo,io)*G_lesser(io,jo,ie)
+      enddo
+      !$omp end do
+      !$omp end parallel
+    enddo    
+    B=B*(En(2)-En(1))*e_charge/twopi/hbar*e_charge*dble(spindeg)
+    if (present(cur)) cur(:,:,ie) = dble(B)
+    if (present(tot_ecur)) tot_ecur=tot_ecur+ en(ie)*dble(B)
+    tot_cur=tot_cur+ dble(B)          
+  enddo
+  deallocate(B)
+end subroutine calc_bond_current
+
+! calculate scattering collision integral from the self-energy
+! I = Sig> G^< - Sig< G^>
+subroutine calc_collision(Sig_lesser,Sig_greater,G_lesser,G_greater,nen,en,spindeg,nm_dev,I,Ispec)
+  complex(8),intent(in),dimension(nm_dev,nm_dev,nen)::G_greater,G_lesser,Sig_lesser,Sig_greater
+  real(8),intent(in)::en(nen),spindeg
+  integer,intent(in)::nen,nm_dev
+  complex(8),intent(out)::I(nm_dev,nm_dev) ! collision integral
+  complex(8),intent(out),optional::Ispec(nm_dev,nm_dev,nen) ! collision integral spectrum
+  !----
+  complex(8),allocatable::B(:,:)
+  integer::ie
+  real(8),parameter::tpi=6.28318530718  
+  allocate(B(nm_dev,nm_dev))
+  I=dcmplx(0.0d0,0.0d0)
+  do ie=1,nen
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,cone,Sig_greater(:,:,ie),nm_dev,G_lesser(:,:,ie),nm_dev,czero,B,nm_dev)
+    call zgemm('n','n',nm_dev,nm_dev,nm_dev,-cone,Sig_lesser(:,:,ie),nm_dev,G_greater(:,:,ie),nm_dev,cone,B,nm_dev) 
+    I(:,:)=I(:,:)+B(:,:)
+    if (present(Ispec)) Ispec(:,:,ie)=B(:,:)*spindeg
+  enddo
+  I(:,:)=I(:,:)*dble(en(2)-en(1))/tpi*spindeg
+  deallocate(B)
+end subroutine calc_collision
+
+
+!----------------------------  OUTPUTS  --------------------------------
+
+
+! write current into file 
+subroutine write_current(dataset,i,cur,length,NB,NS,Lx)
+  character(len=*), intent(in) :: dataset
+  real(8), intent(in) :: cur(:,:)
+  integer, intent(in)::i,length,NB,NS
+  real(8), intent(in)::Lx
+  integer:: j,ib,jb,ii
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ii = 1,length-1
+    tr=0.0d0          
+    do ib=1,nb        
+      do j=ii,min(ii+NS-1,length-1)
+        do jb=1,nb       
+          tr = tr+ cur((ii-1)*nb+ib,j*nb+jb)
+        enddo
+      enddo                        
+    end do
+    write(11,'(2E18.4)') dble(ii)*Lx, tr
+  end do
+end subroutine write_current
+
+
+! write charge into file 
+subroutine write_charge(dataset,i,charge,length,NB,Lx)
+  character(len=*), intent(in) :: dataset
+  real(8), intent(in) :: charge(:)
+  integer, intent(in)::i,length,NB
+  real(8), intent(in)::Lx
+  integer:: j,ib,jb,ii
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ii = 1,length
+    tr=0.0d0          
+    do ib=1,nb        
+      tr = tr+ charge((ii-1)*nb+ib)        
+    end do
+    write(11,'(2E18.4)') dble(ii-1)*Lx, tr
+  end do
+  close(11)
+end subroutine write_charge
+
+! write potential profile into file 
+subroutine write_potprofile(dataset,i,pot,length,NB,Lx)
+  character(len=*), intent(in) :: dataset
+  real(8), intent(in) :: pot(:)
+  integer, intent(in)::i,length,NB
+  real(8), intent(in)::Lx
+  integer:: j,ib,jb,ii
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ii = 1,length
+    tr=0.0d0          
+    do ib=1,nb        
+      tr = tr+ pot((ii-1)*nb+ib)        
+    end do
+    write(11,'(2E18.4)') dble(ii-1)*Lx, tr/dble(nb)
+  end do
+  close(11)
+end subroutine write_potprofile
+
+
+! write current spectrum into file (pm3d map)
+subroutine write_current_spectrum(dataset,i,cur,nen,en,length,NB,Lx)
+  character(len=*), intent(in) :: dataset
+  real(8), intent(in) :: cur(:,:,:)
+  integer, intent(in)::i,nen,length,NB
+  real(8), intent(in)::Lx,en(nen)
+  integer:: ie,j,ib,jb
+  real(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ie = 1,nen
+      do j = 1,length-1
+          tr=0.0d0          
+          do ib=1,nb  
+            do jb=1,nb        
+              tr = tr+ cur((j-1)*nb+ib,j*nb+jb,ie)
+            enddo                        
+          end do
+          write(11,'(3E18.4)') dble(j)*Lx, en(ie), tr
+      end do
+      write(11,*)    
+  end do
+  close(11)
+end subroutine write_current_spectrum
+
+
+! write spectrum into file (pm3d map)
+subroutine write_spectrum(dataset,i,G,nen,en,length,NB,Lx,coeff)
+  character(len=*), intent(in) :: dataset
+  complex(8), intent(in) :: G(:,:,:)
+  integer, intent(in)::i,nen,length,NB
+  real(8), intent(in)::Lx,en(nen),coeff(2)
+  integer:: ie,j,ib
+  complex(8)::tr
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ie = 1,nen
+      do j = 1,length
+          tr=0.0d0          
+          do ib=1,nb
+              tr = tr+ G((j-1)*nb+ib,(j-1)*nb+ib,ie)            
+          end do
+          write(11,'(4E18.4)') (j-1)*Lx, en(ie), dble(tr)*coeff(1), aimag(tr)*coeff(2)        
+      end do
+      write(11,*)    
+  end do
+  close(11)
+end subroutine write_spectrum
+
+
+! write transmission spectrum into file
+subroutine write_transmission_spectrum(dataset,i,tr,nen,en)
+  character(len=*), intent(in) :: dataset
+  real(8), intent(in) :: tr(:)
+  integer, intent(in)::i,nen
+  real(8), intent(in)::en(nen)
+  integer:: ie,j,ib
+  open(unit=11,file=trim(dataset)//TRIM(STRING(i))//'.dat',status='unknown')
+  do ie = 1,nen    
+    write(11,'(2E18.4)') en(ie), dble(tr(ie))      
+  end do
+  close(11)
+end subroutine write_transmission_spectrum
+
+FUNCTION STRING(inn)
+  INTEGER, PARAMETER :: POS= 4
+  INTEGER, INTENT(IN) :: inn
+  CHARACTER(LEN=POS) :: STRING  
+  INTEGER :: cifra, np, mm, num  
+  IF (inn > (10**POS)-1) stop "ERROR: (inn > (10**3)-1)  in STRING"
+  num= inn
+  DO np= 1, POS
+      mm= pos-np
+      cifra= num/(10**mm)            
+      STRING(np:np)= ACHAR(48+cifra)
+      num= num - cifra*(10**mm)
+  END DO
+END FUNCTION STRING
 
 
 end module gw_dense

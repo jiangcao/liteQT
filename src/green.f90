@@ -17,7 +17,7 @@ public :: green_solve_gw_1D_memsaving,green_solve_gw_2D_memsaving
 public :: get_OBC_blocks_for_W,get_dL_OBC_for_W
 public :: green_solve_gw_1D_supermemsaving
 public :: green_solve_gw_3D
-public :: write_spectrum, write_current,write_current_spectrum,calc_bond_current,calc_collision
+public :: write_spectrum, write_current,write_current_spectrum,calc_bond_current,calc_collision,write_transmission_spectrum
 
 complex(8), parameter :: cone = cmplx(1.0d0,0.0d0)
 complex(8), parameter :: czero  = cmplx(0.0d0,0.0d0)
@@ -2604,9 +2604,13 @@ real(8),parameter::tpi=6.28318530718
   tot_ecur=0.0d0
   do ie=1,nen
     do io=1,nm_dev
+      !$omp parallel default(shared) private(jo)  
+      !$omp do
       do jo=1,nm_dev
         B(io,jo)=H(io,jo)*G_lesser(jo,io,ie) - H(jo,io)*G_lesser(io,jo,ie)
       enddo
+      !$omp end do
+      !$omp end parallel
     enddo    
     B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
     if (present(cur)) cur(:,:,ie) = dble(B)

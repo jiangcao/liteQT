@@ -1,5 +1,16 @@
-! Copyright (c) 2023 Jiang Cao, ETH Zurich 
-! All rights reserved.
+!===============================================================================
+! Copyright (C) 2023 Jiang Cao
+!
+! This program is distributed under the terms of the GNU General Public License.
+! See the file `LICENSE' in the root directory of this distribution, or obtain 
+! a copy of the License at <https://www.gnu.org/licenses/gpl-3.0.txt>.
+!
+! Author: Jiang Cao <jiacao@ethz.ch>
+! Comment:
+!  
+! Maintenance:
+!===============================================================================
+
 module fft_mod
     use parameters_mod
     implicit none 
@@ -121,7 +132,7 @@ module fft_mod
         !
         complex(dp)::Z(n),Y(n)
         complex(dp),allocatable,dimension(:)::x_in, y_in, z_in
-        integer::i,ie,iop
+        integer::i,iop
         !        
         Y=czero
         Y(n/2:n/2+nop-1) = Y1(1:nop)
@@ -166,8 +177,8 @@ module fft_mod
       character(len=*),intent(in)::method
       complex(dp),intent(in)::X(n),Y(n)
       complex(dp)::Z(n)
-      complex(dp),allocatable,dimension(:)::x_in, y_in, z_in,tmp
-      integer::i,ie,iop
+      complex(dp),allocatable,dimension(:)::x_in, y_in, z_in
+      integer::i,iop
       select case (trim(method))
         case default ! explicit index
           Z = czero  
@@ -206,7 +217,7 @@ module fft_mod
       integer :: n
       Complex(dp) :: X_in(n),Y_in(n),Z_out(n)
       Complex(dp) :: X_out(n),Y_out(n),Z_in(n)
-     type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+     type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle
      Integer :: Status
      ! Perform a complex to complex transform
      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )
@@ -229,7 +240,7 @@ module fft_mod
       Complex(dp),intent(in) :: X_in(n)
       Complex(dp),intent(out) :: x_out(n)
       logical,intent(in) :: forward
-     type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle, My_Desc2_Handle
+     type(DFTI_DESCRIPTOR), POINTER :: My_Desc1_Handle
      Integer :: Status
      ! Perform a complex to complex transform
      Status = DftiCreateDescriptor( My_Desc1_Handle, DFTI_DOUBLE, DFTI_COMPLEX, 1, n )

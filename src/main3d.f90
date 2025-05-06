@@ -36,6 +36,8 @@ integer :: nm_dev, iter, niter, nkz,ikz,ndiag,nk
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2),dky
 real(8) :: intensity,hw,midgap(2),polaris(3), ky_shift, kz_shift
 real(8) :: scba_tol
+real(8), allocatable :: mid_bandgap(:)
+real(8), allocatable,dimension(:) ::charge
 
 ! MPI variables
 integer ( kind = 4 ) ierr
@@ -263,6 +265,11 @@ if (ltrans) then
           write(11,*)
       end do
       close(11)
+      nm_dev=nb*length    
+      allocate(mid_bandgap(nm_dev))
+      mid_bandgap(:) = (CBM+VBM)/2.0d0      
+      
+      allocate(charge(nm_dev))
       
       ! add on potential    
       if (lreadpot) then
@@ -286,12 +293,14 @@ if (ltrans) then
            do j = 1,length
                do ib = 1,nb
                    Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot(j)
-               end do
+                   mid_bandgap((j-1)*nb+ib) = mid_bandgap((j-1)*nb+ib) + pot(j)
+               end do               
            end do      
         else  
            do j = 1,length
                do ib = 1,nb
                    Ham((j-1)*nb+ib,(j-1)*nb+ib,:)=Ham((j-1)*nb+ib,(j-1)*nb+ib,:) + pot((j-1)*nb+ib)
+                   mid_bandgap((j-1)*nb+ib) = mid_bandgap((j-1)*nb+ib) + pot((j-1)*nb+ib)
                end do
            end do
         endif
@@ -301,18 +310,15 @@ if (ltrans) then
         end do
         deallocate(pot)
       endif
-      nm_dev=nb*length    
-      
-      midgap=(/ (CBM+VBM)/2.0d0,(CBM+VBM)/2.0d0 /)
-      !midgap= midgap + (/ pot(1), pot(length)/)
+      write(20,*) mid_bandgap      
       !
       if ((nkz == 1) .and. (nky==1)) then
       
-        call green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,conv_method,&
+        call green_solve_gw_1D(scba_tol,niter,nm_dev,Lx,length,dble(spin_deg),temps,tempd,mus,mud,conv_method,mid_bandgap,&
           alpha_mix,nen,En,nb,ns,Ham,H00ld,H10ld,T,V,&
           G_retarded,G_lesser,G_greater,P_retarded,P_lesser,P_greater,&
           W_retarded,W_lesser,W_greater,Sig_retarded,Sig_lesser,Sig_greater,&
-          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag)
+          Sig_retarded_new,Sig_lesser_new,Sig_greater_new,ldiag,charge)
           
       else
       
@@ -324,27 +330,6 @@ if (ltrans) then
           
       endif
 
-      deallocate(H00ld)
-      deallocate(H10ld) 
-      deallocate(Ham)    
-      deallocate(T)
-      deallocate(G_retarded)
-      deallocate(G_lesser)
-      deallocate(G_greater)
-      deallocate(P_retarded)
-      deallocate(P_lesser)
-      deallocate(P_greater)
-      deallocate(W_retarded)
-      deallocate(W_lesser)
-      deallocate(W_greater)
-      deallocate(Sig_retarded)
-      deallocate(Sig_lesser)
-      deallocate(Sig_greater)
-      deallocate(Sig_retarded_new)
-      deallocate(Sig_lesser_new)
-      deallocate(Sig_greater_new)
-      deallocate(en)    
-      deallocate(V)
    else
     ! Long device, use RGF
 
@@ -567,16 +552,10 @@ if (ltrans) then
     endif
     
     call MPI_Barrier(MPI_COMM_WORLD, ierr)
-
-    deallocate(Hii,H1i)
-    deallocate(Vii,V1i)
-    deallocate(Pii,P1i)    
-    deallocate(en)
     
   endif        
 end if
-if (allocated(B)) deallocate(B)
-if (allocated(orb_vac)) deallocate(orb_vac)
+
 call w90_free_memory
 
 if (comm_rank == 0) then
