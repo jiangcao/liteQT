@@ -215,7 +215,7 @@ endif
         if (wannier_center(3,i)>Lz) wannier_center(:,i)=wannier_center(:,i)-gamm
     end do
     ! center z around 0
-    wannier_center(3,:)=wannier_center(3,:)-(sum(wannier_center(3,:)/dble(NB)))
+    ! wannier_center(3,:)=wannier_center(3,:)-(sum(wannier_center(3,:)/dble(NB)))
     deallocate(ham)
     deallocate(energ)
     deallocate(ind)

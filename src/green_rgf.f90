@@ -648,20 +648,22 @@ subroutine calc_sigma_ephoton_monochromatic_nx(nm,length,nen,En,nop,Mii,G_lesser
 
 
 
-subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs)
+subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndiag,Lx,nen,en,temp,mu,midgap,Hii,H1i,Vii,V1i,spindeg,Pii,P1i,polarization,intensity,hw,labs,tunnel)
   integer,intent(in)::nm,nx,nen,niter,NB,NS,ndiag,nky,nkz
   real(8),intent(in)::en(nen),temp(2),mu(2),Lx,alpha_mix,spindeg
   complex(8),intent(in),dimension(nm,nm,nx,nky*nkz)::Hii,H1i,Vii,V1i
   !complex(8), intent(in):: V(nm*nx,nm*nx,nky*nkz)
   real(8), intent(in) :: polarization(3) ! light polarization vector 
+  real(8), intent(in) :: midgap(nx) ! middle of bandgap 
   real(8), intent(in) :: intensity ! [W/m^2]
   logical, intent(in) :: labs ! whether to calculate Pi and absorption
   complex(8), intent(in):: Pii(nm,nm,3,nx,nky*nkz),P1i(nm,nm,3,nx,nky*nkz) ! momentum matrix [eV] (multiplied by light-speed, Pmn=c0*p)
   real(8), intent(in) :: hw ! hw is photon energy in eV
+  logical,intent(in),optional::tunnel(nb,nb)
   ! -------- local variables
   real(8), parameter :: pre_fact=((hbar/m0)**2)/(2.0d0*eps0*c0**3) 
   complex(8),allocatable,dimension(:,:,:,:,:)::g_r,g_greater,g_lesser, g_r_i1
-  real(8),allocatable,dimension(:,:,:,:,:)::cur,jdens
+  real(8),allocatable,dimension(:,:,:,:,:)::cur,jdens,jz
   real(8),allocatable,dimension(:,:,:,:)::tot_cur,tot_ecur
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_gw,sigma_greater_gw,sigma_r_gw
   complex(8),allocatable,dimension(:,:,:,:,:)::sigma_lesser_new,sigma_greater_new,sigma_r_new
@@ -674,6 +676,7 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   complex(8),allocatable,dimension(:,:,:)::Pi_retarded_ik,Pi_lesser_ik,Pi_greater_ik,Pi_retarded
   complex(8),allocatable::Ispec(:,:,:,:),Itot(:,:,:),Ispec_ik(:,:,:,:),Itot_ik(:,:,:)
   real(8)::tr(nen,nky*nkz),tre(nen,nky*nkz)
+  real(8)::nelec(nx),pelec(nx)
   integer::ie,iter,i,ix,nopmax,nop,nopphot,iop,l,h,io
   integer::ikz,iqz,ikzd,iky,iqy,ikyd,ik,iq,ikd,nk
   complex(8)::dE, B(nm,nm)
@@ -686,6 +689,9 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   allocate(g_lesser(nm,nm,nx,nen,nk))
   allocate(cur(nm,nm,nx,nen,nk))
   allocate(jdens(nb,nb,nx*ns,nen,nk))
+  if (present(tunnel)) then 
+      allocate(jz(nb,nb,nx*ns,nen,nk))
+  endif
   allocate(tot_cur(nb,nb,nx*ns,nk))
   allocate(tot_ecur(nb,nb,nx*ns,nk))
   allocate(sigma_lesser_gw(nm,nm,nx,nen,nk))
@@ -734,15 +740,33 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
       enddo
       !$omp end do 
       !$omp end parallel
+      call write_spectrum('gw_ldos_k'//string(ik)//'_',iter,g_r(:,:,:,:,ik),nen,En,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))
       call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))      
+      if (present(tunnel)) then
+          print *, '  tunnel current'
+          call calc_tunneling_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tunnel,jz(:,:,:,:,ik))      
+      endif
+      call write_current_spectrum('gw_Jz_k'//string(ik),iter,jz(:,:,:,:,ik),nen,En,nx*ns,NB,Lx) 
     enddo
+    print *,'done.'
+    call calc_n_electron(G_lesser,G_greater,nen,En,nm,nk,nx,nelec,pelec,midgap)
+    
+    open(unit=101,file='gw_pelec.dat',status='unknown')
+    write(101,'(E16.6)') pelec
+    close(101)
+    open(unit=101,file='gw_nelec.dat',status='unknown')
+    write(101,'(E16.6)') nelec
+    close(101)
     !
     call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
     call write_spectrum_summed_over_k('gw_ndos',iter,g_lesser,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,1.0d0/))       
     call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
     call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
     call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk) 
-    call write_current_spectrum_summed_over_kz('gw_Jx',iter,cur,nen,En,nx,NB*ns,Lx*ns,nk)  
+    if (present(tunnel)) then
+        call write_current_spectrum_summed_over_kz('gw_Jz',iter,jz,nen,En,nx*ns,NB,Lx,nk) 
+    endif
+    ! call write_current_spectrum_summed_over_kz('gw_Jx',iter,cur,nen,En,nx,NB*ns,Lx*ns,nk)  
     call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
     call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
     call write_transmission_spectrum_k('gw_trR',iter,tr,nen,En,nk)
@@ -750,6 +774,7 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
     open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
     write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
     close(101)
+    print *, 'iter=',iter,'  IDS=',sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),' , ',sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
     g_r = dcmplx( 0.0d0*dble(g_r), aimag(g_r))
     g_lesser = dcmplx( 0.0d0*dble(g_lesser), aimag(g_lesser))
     g_greater = dcmplx( 0.0d0*dble(g_greater), aimag(g_greater))
@@ -950,7 +975,12 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
     enddo
     !$omp end do 
     !$omp end parallel
+    call write_spectrum('gw_ldos_k'//string(ik)//'_',iter,g_r(:,:,:,:,ik),nen,En,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))
     call calc_block_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),cur(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tot_cur(:,:,:,ik),tot_ecur(:,:,:,ik),jdens(:,:,:,:,ik))      
+    if (present(tunnel)) then
+        call calc_tunneling_current(Hii(:,:,:,ik),G_lesser(:,:,:,:,ik),nen,en,spindeg,nb,ns,nm,nx,tunnel,jz(:,:,:,:,ik))      
+    endif
+
   enddo
   !
   call write_spectrum_summed_over_k('gw_ldos',iter,g_r,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-2.0d0/))  
@@ -958,24 +988,20 @@ subroutine green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,nx,nky,nkz,ndi
   call write_spectrum_summed_over_k('gw_pdos',iter,g_greater,nen,En,nk,nx,NB,NS,Lx,(/1.0d0,-1.0d0/))     
   call write_dos_summed_over_k('gw_dos',iter,G_r,nen,En,nk,nx,NB,NS,Lx)
   call write_current_spectrum_summed_over_kz('gw_Jdens',iter,jdens,nen,En,nx*ns,NB,Lx,nk)  
+  if (present(tunnel)) then
+      call write_current_spectrum_summed_over_kz('gw_Jz',iter,jz,nen,En,nx*ns,NB,Lx,nk) 
+  endif
   call write_current_summed_over_k('gw_I',iter,tot_cur,nx*ns,NB,Lx,nk)
   call write_current_summed_over_k('gw_EI',iter,tot_ecur,nx*ns,NB,Lx,nk)
-  call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
-  call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+  !call write_transmission_spectrum_k('gw_trR',iter,tr*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+  !call write_transmission_spectrum_k('gw_trL',iter,tre*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),nen,En,nk)
+  call write_transmission_spectrum_k('gw_trR',iter,tr,nen,En,nk)
+  call write_transmission_spectrum_k('gw_trL',iter,tre,nen,En,nk)
   open(unit=101,file='Id_iteration.dat',status='unknown',position='append')
   write(101,'(I4,2E16.6)') iter, sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk), sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
   close(101)
+  print *, 'iter=',iter,'  IDS=',sum(tre)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk),' , ',sum(tr)*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)/dble(nk)
   !!!!!!!!!
-  deallocate(g_r,g_lesser,g_greater,cur)
-  deallocate(sigma_lesser_gw,sigma_greater_gw,sigma_r_gw)   
-  deallocate(sigma_lesser_new,sigma_greater_new,sigma_r_new)   
-  deallocate(P_retarded,P_lesser,P_greater)
-  !deallocate(P_retarded_1i,P_lesser_1i,P_greater_1i)
-  deallocate(W_retarded,W_lesser,W_greater)
-  !deallocate(W_retarded_i1,W_lesser_i1,W_greater_i1)  
-  deallocate(Mii)
-  deallocate(Ispec,Itot)
-  deallocate(Ispec_ik,Itot_ik)
 end subroutine green_rgf_solve_gw_ephoton_3d
 
 
@@ -3890,6 +3916,35 @@ subroutine identity(A,n)
 end subroutine identity
 
 
+! calculate number of electrons and holes from G< and G> 
+subroutine calc_n_electron(G_lesser,G_greater,nen,E,nm,nk,nx,nelec,pelec,midgap)
+integer, intent(in)    :: nm,nx,nen,nk
+complex(8), intent(in) :: G_lesser(nm,nm,nx,nen,nk)
+complex(8), intent(in) :: G_greater(nm,nm,nx,nen,nk)
+real(8), intent(in)    :: E(nen),midgap(nx)
+real(8), intent(out)   :: nelec(nx),pelec(nx)
+real(8)::dE,dk
+integer::i,j,ik,ix
+nelec=0.0d0
+pelec=0.0d0
+dE=(E(2)-E(1)) / (2.0*pi)
+dK=2.0*pi/dble(nk)
+do i=1,nen
+  do ik=1,nk
+    do ix=1,nx
+      do j=1,nm
+        if (E(i)>midgap(ix))then
+          nelec(ix)=nelec(ix)+aimag(G_lesser(j,j,ix,i,ik))*dE*dK
+        else
+          pelec(ix)=pelec(ix)-aimag(G_greater(j,j,ix,i,ik))*dE*dK
+        endif
+      enddo
+    enddo
+  enddo
+enddo
+end subroutine calc_n_electron
+
+
 
 !!!! RGF for diagonal blocks of G^r,<,>
 subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph,sigma_r_ph,ndens,pdens,ldos,tr,tre,cur,GRi1,GLi1,GGi1)     
@@ -3940,9 +3995,9 @@ subroutine green_RGF_RS(TEMP,nm,nx,E,mu,Hii,H1i,sigma_lesser_ph,sigma_greater_ph
     call sancho(NM,E,S00,H00,transpose(conjg(H10)),G00,GBB)
     !
     tmp1=maxval(abs(transpose(G00) - G00)) / maxval(abs(G00))
-    if (tmp1 > 2e-2) then
-        print *, 'E=',E, '|G00^t-G00|=', tmp1
-    endif
+    ! if (tmp1 > 2e-2) then
+    !     print *, 'E=',E, '|G00^t-G00|=', tmp1
+    ! endif
     !
     call zgemm('n','n',nm,nm,nm,alpha,H10,nm,G00,nm,beta,A,nm) 
     call zgemm('n','c',nm,nm,nm,alpha,A,nm,H10,nm,beta,sigmal,nm)      
@@ -4583,6 +4638,42 @@ real(8),parameter::tpi=6.28318530718
   enddo
   deallocate(B)
 end subroutine calc_block_current
+
+! calculate tunneling current within each block using I_ij = H_ij G<_ji - H_ji G^<_ij
+subroutine calc_tunneling_current(H,G_lesser,nen,en,spindeg,nb,ns,nm,nx,tunnel,jdens)
+complex(8),intent(in)::H(nm,nm,nx),G_lesser(nm,nm,nx,nen)
+real(8),intent(in)::en(nen),spindeg
+integer,intent(in)::nen,nm,nx,nb,ns ! number of E and device dimension
+logical,intent(in)::tunnel(nb,nb)
+real(8),intent(out)::jdens(nb,nb,nx*ns,nen) ! energy resolved bond current density
+!----
+complex(8),allocatable::B(:,:)
+integer::ie,io,jo,ix,ib,jb,i,j,l
+real(8),parameter::tpi=6.28318530718  
+  allocate(B(nb,nb))
+  do ie=1,nen
+    do ix=1,nx
+      do ib=1,ns
+        B = 0.0d0  
+        do jb=1,ns
+          do io=1,nb
+            do jo=1,nb
+              i=io+(ib-1)*nb
+              j=jo+(jb-1)*nb
+              if (tunnel(io,jo)) then
+                B(io,jo) = B(io,jo) + H(i,j,ix)*G_lesser(j,i,ix,ie) - H(j,i,ix)*G_lesser(i,j,ix,ie)
+              endif
+            enddo
+          enddo    
+        enddo    
+        B=B*(En(2)-En(1))*e0/tpi/hbar*e0*dble(spindeg)
+        l=(ix-1)*ns+ib
+        jdens(:,:,l,ie) = dble(B)
+      enddo
+    enddo
+  enddo
+  deallocate(B)
+end subroutine calc_tunneling_current
 
 
 

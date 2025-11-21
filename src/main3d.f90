@@ -3,7 +3,7 @@
 !
 PROGRAM main
 
-USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks
+USE wannierHam3d, only : NB, w90_load_from_file, w90_free_memory,Ly,Lz,CBM,VBM,eig,w90_MAT_DEF_full_device, invert, Lx, w90_bare_coulomb_full_device,kt_CBM,spin_deg,Eg,w90_MAT_DEF,w90_bare_coulomb_blocks,w90_momentum_blocks,wannier_center
 use green, only : green_calc_g, green_solve_gw_3D
 use gw_dense, only : green_solve_gw_1D
 use green_rgf, only : green_rgf_solve_gw_1d,green_RGF_CMS,green_rgf_solve_gw_3d,green_rgf_solve_gw_ephoton_3d, green_rgf_solve_gw_ephoton_3d_mpi_kpar, green_rgf_solve_gw_ephoton_3d_ijs
@@ -25,7 +25,7 @@ complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded,Sig_lesser,Sig_greate
 complex(8), allocatable,dimension(:,:,:,:) :: Sig_retarded_new,Sig_lesser_new,Sig_greater_new
 complex(8), allocatable :: Pmn(:,:,:,:)
 
-logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb,labs
+logical :: reorder_axis, ltrans, lreadpot, lqdot, lkz, lephot, lnogw, lrgf,ldiag,lrcoulomb,labs,lsideinj,lefield
 character(len=5)::conv_method
 integer :: nen , pottype
 complex(8), parameter :: cone = dcmplx(1.0d0,0.0d0)
@@ -34,10 +34,13 @@ real(8), allocatable :: pot(:)
 integer, allocatable :: cell_index(:,:)
 integer :: nm_dev, iter, niter, nkz,ikz,ndiag,nk
 real(8) :: eps_screen, mud,mus,temps,tempd, alpha_mix, dkz,kz, r0,potscale,encut(2),dky
-real(8) :: intensity,hw,midgap(2),polaris(3), ky_shift, kz_shift
+real(8) :: intensity,hw,polaris(3), ky_shift, kz_shift
 real(8) :: scba_tol
+real(8) :: z0(2,2), eamp
 real(8), allocatable :: mid_bandgap(:)
 real(8), allocatable,dimension(:) ::charge
+integer :: counter1, counter2
+logical,allocatable::tunnel(:,:)
 
 ! MPI variables
 integer ( kind = 4 ) ierr
@@ -121,6 +124,16 @@ if (ltrans) then
       read(10,*) lnogw
       read(10,*) labs
     endif
+    read(10,*) lsideinj
+    if (lsideinj) then
+        read(10,*) z0(:,1)
+        read(10,*) z0(:,2)
+    endif
+    read(10,*) lefield
+    if (lefield) then
+        read(10,*) eamp
+    endif
+    
 end if
 close(10)
 
@@ -369,7 +382,6 @@ if (ltrans) then
     endif
 
     if (comm_rank == 0) then
-
       open(unit=10,file='Hii.dat',status='unknown')
       open(unit=11,file='H1i.dat',status='unknown')
       open(unit=20,file='Vii.dat',status='unknown')
@@ -396,6 +408,13 @@ if (ltrans) then
         !
         call w90_momentum_blocks(Pii(:,:,:,1,ik),P1i(:,:,:,1,ik),0.0d0,ky,kz,NS,'approx')
 
+        if (lefield) then 
+            do i = 1,NB
+                do j = 1,NS
+                    Hii(i + (j-1)*NB, i + (j-1)*NB, 1,ik) = Hii(i + (j-1)*NB, i + (j-1)*NB, 1,ik) + eamp * (wannier_center(3, i) - sum(wannier_center(3,:)) / dble(NB))
+                enddo
+            enddo
+        endif
         ! write Ham blocks
 
         if (comm_rank == 0) then
@@ -425,9 +444,73 @@ if (ltrans) then
           Pii(:,:,:,i,ik)=Pii(:,:,:,1,ik)
           P1i(:,:,:,i,ik)=P1i(:,:,:,1,ik)
         enddo
+
+        
       enddo
     enddo
 
+    allocate(tunnel(nb,nb))
+    tunnel = .false.
+    ! cut coupling Ham for side injection 
+    if (lsideinj) then 
+        print *, "  Cut coupling Ham for side injection "
+        do i=1,NS
+            counter1 = 0
+            counter2 = 0
+            do j=1,NB
+                ! left side
+                if ( wannier_center(3,j) < z0(1,1) .or.  wannier_center(3,j) > z0(2,1) ) then 
+                    if (i==1) print *,'left  remove: orb#',j,wannier_center(3,j) 
+                    H1i( (i-1)*NB + j, : , 1, :) = 0.0d0
+                    H1i( :, (i-1)*NB + j , 1, :) = 0.0d0
+                    Hii( (i-1)*NB + j, : , 1, :) = 0.0d0
+                    Hii( :, (i-1)*NB + j , 1, :) = 0.0d0
+                    Hii( (i-1)*NB + j,(i-1)*NB + j, 1, :) = 1.0d3
+
+                    H1i( (i-1)*NB + j, : , 2, :) = 0.0d0
+                    ! H1i( :, (i-1)*NB + j , 2, :) = 0.0d0
+                    Hii( (i-1)*NB + j, : , 2, :) = 0.0d0
+                    Hii( :, (i-1)*NB + j , 2, :) = 0.0d0
+                    Hii( (i-1)*NB + j,(i-1)*NB + j, 2, :) = 1.0d3
+                    counter1 = counter1 + 1
+                endif
+                ! right side
+                if ( wannier_center(3,j) < z0(1,2) .or. wannier_center(3,j) > z0(2,2) ) then 
+                    if (i==1) print *,'right remove: orb#',j,wannier_center(3,j) 
+                    H1i( (i-1)*NB + j, : , length, :) = 0.0d0
+                    H1i( :, (i-1)*NB + j , length, :) = 0.0d0
+                    Hii( (i-1)*NB + j, : , length, :) = 0.0d0
+                    Hii( :, (i-1)*NB + j , length, :) = 0.0d0
+                    Hii( (i-1)*NB + j,(i-1)*NB + j, length, :) = 1.0d3
+
+                    ! H1i( (i-1)*NB + j, : , length-1, :) = 0.0d0
+                    H1i( :, (i-1)*NB + j , length-1, :) = 0.0d0
+                    Hii( (i-1)*NB + j, : , length-1, :) = 0.0d0
+                    Hii( :, (i-1)*NB + j , length-1, :) = 0.0d0
+                    Hii( (i-1)*NB + j,(i-1)*NB + j, length-1, :) = 1.0d3
+                    counter2 = counter2 + 1
+                endif
+            enddo
+            if (i==1) then 
+                print *, 'left  remove total', counter1, ' orbitals'
+                print *, 'right remove total', counter2, ' orbitals'
+            endif
+        enddo
+    endif
+
+    do i = 1,NB
+        do j = 1,NB
+            if ( wannier_center(3,i) > z0(1,1) .and.  wannier_center(3,i) < z0(2,1) .and. &
+                 wannier_center(3,j) > z0(1,2) .and.  wannier_center(3,j) < z0(2,2) ) then 
+                tunnel(i,j) = .true.
+                tunnel(j,i) = .true.
+            endif
+        enddo
+    enddo
+
+    allocate(H00(nb*ns,nb*ns))
+    allocate(phix(nkx))
+    allocate(ek(nb*ns,nkx))
 
     if (comm_rank == 0) then
 
@@ -436,20 +519,37 @@ if (ltrans) then
       close(20)
       close(21)
 
-      open(unit=11,file='ek.dat',status='unknown')
+      open(unit=10,file='ek.dat',status='unknown')
+      open(unit=11,file='ekl.dat',status='unknown')
+      open(unit=12,file='ekr.dat',status='unknown')
     endif
 
-    !
 
-    allocate(H00(nb*ns,nb*ns))
-    allocate(phix(nkx))
-    allocate(ek(nb*ns,nkx))
     do iky=1,nky
       ky=-pi/Ly + dble(iky)*dky +ky_shift*2.0d0*pi/Ly
       do ikz=1,nkz
         kz=-pi/Lz + dble(ikz)*dkz +kz_shift*2.0d0*pi/Ly
         ik=ikz+(iky-1)*nkz          
+
         ! write bands into ek.dat                                      
+        phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
+        do i=1,nkx
+            H00(:,:) = Hii(:,:,3,ik)                          
+            H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,3,ik)
+            H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,3,ik)))
+            ek(:,i) = eig(NB*NS,H00)
+        enddo  
+        
+        if (comm_rank == 0) then
+          do j=1,nb*NS
+              do i=1,nkx
+                  write(10,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
+              enddo
+              write(10,*)
+          enddo
+        endif  
+
+        ! write bands into ekl.dat                                      
         phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
         do i=1,nkx
             H00(:,:) = Hii(:,:,1,ik)                          
@@ -466,16 +566,48 @@ if (ltrans) then
               write(11,*)
           enddo
         endif  
-                    
+ 
+        ! write bands into ekr.dat                                      
+        phix=(/(i, i=1,nkx, 1)/) / dble(nkx-1) * pi * 2.0d0 - pi        
+        do i=1,nkx
+            H00(:,:) = Hii(:,:,length,ik)                          
+            H00 = H00 + exp(+dcmplx(0.0d0,1.0d0)*phix(i))*H1i(:,:,length,ik)
+            H00 = H00 + exp(-dcmplx(0.0d0,1.0d0)*phix(i))*conjg(transpose(H1i(:,:,length,ik)))
+            ek(:,i) = eig(NB*NS,H00)
+        enddo  
+        
+        if (comm_rank == 0) then
+          do j=1,nb*NS
+              do i=1,nkx
+                  write(12,'(4E18.8)') ky*Ly, kz*Lz, phix(i), ek(j,i)
+              enddo
+              write(12,*)
+          enddo
+        endif                   
       enddo
     enddo
     deallocate(H00)    
     deallocate(ek,phix)
     
     if (comm_rank == 0) then
+      close(10)
       close(11)
+      close(12)
     endif
 
+    ! if (lsideinj) then 
+    !     Hii(:,:,2,:) = Hii(:,:,1,:)
+    !     Hii(:,:,3,:) = Hii(:,:,1,:)
+    !     Hii(:,:,length-1,:) = Hii(:,:,length,:)
+    !     Hii(:,:,length-2,:) = Hii(:,:,length,:)
+    !     H1i(:,:,2,:) = H1i(:,:,1,:)
+    !     H1i(:,:,3,:) = H1i(:,:,1,:)
+    !     H1i(:,:,length-1,:) = H1i(:,:,length,:)
+    !     H1i(:,:,length-2,:) = H1i(:,:,length,:)
+    ! endif
+
+    allocate(mid_bandgap(length))
+    mid_bandgap(:) = (CBM+VBM)/2.0d0      
 
     !
     if (lreadpot) then
@@ -500,6 +632,7 @@ if (ltrans) then
         do ik=1,nk
           do j = 1,length
             do k = 1,NS
+              mid_bandgap(j) = mid_bandgap(j) + pot((j-1)*NS+k) / dble(NS)
               do ib = 1,nb
                 Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS+k)
               enddo
@@ -511,6 +644,7 @@ if (ltrans) then
           do j = 1,length
             do k = 1,NS
               do ib = 1,nb
+                mid_bandgap(j) = mid_bandgap(j) + pot((j-1)*NS*nb+(k-1)*nb+ib) / dble(NS*NB)
                 Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik)=Hii(ib+(k-1)*NB,ib+(k-1)*NB,j,ik) + pot((j-1)*NS*nb+(k-1)*nb+ib)
               enddo
             enddo
@@ -538,7 +672,7 @@ if (ltrans) then
     if (lephot) then
 
       if (comm_size == 1) then
-        call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs)
+        call green_rgf_solve_gw_ephoton_3d(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),mid_bandgap,Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs,tunnel=tunnel)
       else
         call green_rgf_solve_gw_ephoton_3d_ijs(alpha_mix,niter,NB,NS,nm,length,nky,nkz,ndiag,Lx,nen,en,(/temps,tempd/),(/mus,mud/),Hii,H1i,Vii,V1i,dble(spin_deg),Pii,P1i,polaris,intensity,hw,labs,lnogw, comm_size, comm_rank, local_NE, first_local_energy)
 
