@@ -1,0 +1,30 @@
+4         !num cell in sancho
+1         !width
+200        !nkx
+1         ! num B field
+0.0           !B field values
+1   ! axis of ribbon length 
+28  ! num CPU
+F   ! reorder axis
+F   ! quantum dot
+T   ! transport 
+18         ! length num cells
+-15.0  5.0   2000    ! emin emax num_en
+T  ! read potential from pot_dat
+1.0   1  
+30  ! num iter
+1e-3  ! scba tol
+1.0  ! epsilon 
+3.0  ! r0 [ang]
+-3.0  -3.6  ! mu_s mu_d 
+300.0   300.0  ! temperature 
+0.5   ! alpha mix
+1.0  4.0  ! intraband interband cutoff energies for P and W
+T     ! read Coulomb blocks
+T     ! only diag
+T     ! RGF
+'fft' ! conv method
+F     ! 2d kz
+F     ! e photon
+F  ! side injection
+F  !  lefield
